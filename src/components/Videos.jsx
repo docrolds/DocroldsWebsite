@@ -56,6 +56,7 @@ function Videos() {
           <div key={index} className="video-card">
             <div className="video-wrapper">
               <iframe 
+                title={`Video ${video.id}`}
                 src={`https://www.youtube.com/embed/${video.id}${video.start ? `?start=${video.start}` : ''}`}
                 allowFullScreen
               ></iframe>
