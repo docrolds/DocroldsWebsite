@@ -15,8 +15,7 @@ function Videos() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-    fetch(`${apiUrl}/content`)
+    fetch('https://doc-rolds-api.onrender.com/api/content')
       .then(res => res.json())
       .then(data => {
         setVideosContent(data.videos);
