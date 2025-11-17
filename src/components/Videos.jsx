@@ -15,7 +15,7 @@ function Videos() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    fetch('http://localhost:3000/api/content')
+    fetch('https://doc-rolds-api.onrender.com/api/content')
       .then(res => res.json())
       .then(data => {
         setVideosContent(data.videos);
