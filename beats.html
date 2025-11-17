@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doc Rolds - Beats</title>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #e0e0e0;
+            background-color: #000;
+        }
+
+        main {
+            max-width: 100%;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        section {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .section-title {
+            font-size: 2.5rem;
+            padding: 2rem 0 1rem;
+            text-align: center;
+            color: #fff;
+            letter-spacing: 0.5px;
+            flex-shrink: 0;
+        }
+
+        nav {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid rgba(232, 54, 40, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        nav ul {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            list-style: none;
+            gap: 3rem;
+            align-items: center;
+        }
+
+        nav a {
+            color: #e0e0e0;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+            font-size: 0.95rem;
+            letter-spacing: 0.5px;
+        }
+
+        nav a:hover {
+            color: #E83628;
+        }
+
+        nav a.active {
+            color: #E83628;
+        }
+
+        .playlist-container {
+            background: transparent;
+            border-radius: 0;
+            padding: 0;
+            box-shadow: none;
+            border: none;
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+        }
+
+        .player-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 0;
+            padding: 0;
+            background: transparent;
+            border-radius: 0;
+            border: none;
+            flex-shrink: 0;
+        }
+
+        .player-btn {
+            background: transparent;
+            color: #E83628;
+            border: 2px solid #E83628;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            box-shadow: none;
+            position: relative;
+            top: 0;
+            margin: 0 0.5rem;
+        }
+
+        .player-btn:hover {
+            transform: scale(1.1);
+            background: rgba(232, 54, 40, 0.08);
+            border-color: #ff6b47;
+            color: #ff6b47;
+        }
+
+        .player-btn:active {
+            transform: scale(0.98);
+        }
+
+        .now-playing {
+            display: none;
+            flex-direction: column;
+            gap: 2rem;
+            margin-bottom: 2rem;
+            padding: 2rem;
+            background: transparent;
+            border-radius: 0;
+            border-left: none;
+            flex-shrink: 0;
+            align-items: center;
+        }
+
+        .now-playing.show {
+            display: flex;
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal-player {
+            background: #000;
+            border: 1px solid rgba(232, 54, 40, 0.3);
+            border-radius: 12px;
+            padding: 0;
+            max-width: 600px;
+            width: 90%;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            animation: slideUp 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            width: 100%;
+            border-bottom: 1px solid rgba(232, 54, 40, 0.2);
+        }
+
+        .modal-close-btn {
+            background: transparent;
+            border: none;
+            color: #999;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close-btn:hover {
+            color: #E83628;
+        }
+
+        .modal-content {
+            padding: 3rem;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-y: auto;
+            flex: 1;
+            min-height: 0;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .fixed-player {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.95);
+            border-top: 1px solid rgba(232, 54, 40, 0.3);
+            padding: 1rem 2rem;
+            z-index: 150;
+            backdrop-filter: blur(10px);
+        }
+
+        .fixed-player.show {
+            display: flex;
+        }
+
+        .fixed-player-content {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+            flex-direction: row;
+        }
+
+        .fixed-player-artwork {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #E83628, #ff6b47);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            color: rgba(255, 255, 255, 0.2);
+            flex-shrink: 0;
+            margin-left: 1rem;
+        }
+
+        .fixed-player-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .fixed-player-title {
+            color: #fff;
+            font-size: 0.95rem;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .fixed-player-meta {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.25rem;
+        }
+
+        .fixed-player-genre {
+            color: #999;
+            font-size: 0.8rem;
+        }
+
+        .fixed-player-bpm {
+            color: #999;
+            font-size: 0.8rem;
+        }
+
+        .fixed-player-progress {
+            flex: 2;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .fixed-player-progress .progress-bar {
+            height: 4px;
+            margin: 0;
+        }
+
+        .fixed-player-controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .fixed-player-btn {
+            background: transparent;
+            color: #E83628;
+            border: 1px solid #E83628;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .fixed-player-btn:hover {
+            background: rgba(232, 54, 40, 0.1);
+        }
+
+        main {
+            padding-bottom: 100px;
+        }
+
+        .now-playing-left {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .now-playing-artwork {
+            width: 250px;
+            height: 250px;
+            background: linear-gradient(135deg, #E83628, #ff6b47);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4rem;
+            color: rgba(255, 255, 255, 0.2);
+            margin-bottom: 1.5rem;
+            padding: 0;
+            text-align: center;
+        }
+
+        .now-playing-right {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .now-playing-title {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.4rem;
+            margin-top: 1rem;
+            font-weight: bold;
+        }
+
+        .now-playing-beat {
+            color: #fff;
+            font-size: 1.4rem;
+            font-weight: bold;
+            margin-bottom: 0.3rem;
+            line-height: 1.2;
+        }
+
+        .now-playing-genre {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.85rem;
+            margin-bottom: 1.5rem;
+            letter-spacing: 0.5px;
+        }
+
+        .beat-info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 2rem;
+            margin-bottom: 0;
+            width: 100%;
+            max-width: 100%;
+            margin-top: 1rem;
+        }
+
+        .beat-info-item {
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+            border: none;
+            text-align: center;
+        }
+
+        .beat-info-label {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.55rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.3rem;
+            font-weight: bold;
+        }
+
+        .beat-info-value {
+            color: #fff;
+            font-size: 0.9rem;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+
+        .progress-container {
+            width: 100%;
+            margin-top: 1.5rem;
+        }
+
+        .progress-bar-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+            width: 100%;
+        }
+
+        .progress-bar {
+            flex: 1;
+            height: 50px;
+            background: rgba(232, 54, 40, 0.05);
+            border-radius: 4px;
+            cursor: pointer;
+            position: relative;
+            border: 1px solid rgba(232, 54, 40, 0.15);
+            overflow: hidden;
+        }
+
+        #waveformCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .progress-time {
+            font-size: 0.75rem;
+            color: #999;
+            min-width: 45px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .playlist {
+            list-style: none;
+            padding: 0 2rem;
+            margin: 0;
+        }
+
+        .playlist-item {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 1.25rem;
+            padding: 1.1rem 1.25rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 1px solid transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .playlist-item:hover {
+            background: rgba(232, 54, 40, 0.1);
+            border-color: rgba(232, 54, 40, 0.2);
+        }
+
+        .playlist-item.active {
+            background: rgba(232, 54, 40, 0.15);
+            border-color: rgba(232, 54, 40, 0.4);
+        }
+
+        .playlist-item-icon {
+            font-size: 1.5rem;
+            min-width: 30px;
+            text-align: center;
+        }
+
+        .playlist-item-active {
+            color: #E83628;
+            font-size: 1.2rem;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .playlist-item-content {
+            flex: 1;
+        }
+
+        .playlist-item-title {
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 0.35rem;
+            line-height: 1.3;
+        }
+
+        .playlist-item-genre {
+            color: #999;
+            font-size: 0.8rem;
+            letter-spacing: 0.3px;
+        }
+
+        .playlist-item-active-title {
+            color: #E83628;
+        }
+
+        .playlist-item-duration {
+            color: #999;
+            font-size: 0.8rem;
+            text-align: right;
+            min-width: 40px;
+        }
+
+        footer {
+            display: none;
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            margin-bottom: 2rem;
+        }
+
+        .footer-section {
+            text-align: center;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .footer-section h3 {
+            color: #fff;
+            margin-bottom: 1.5rem;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .footer-section p {
+            margin-bottom: 1.5rem;
+        }
+
+        .social-links {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.5rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .social-links a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 45px;
+            height: 45px;
+            background: rgba(232, 54, 40, 0.15);
+            border: 1.5px solid rgba(232, 54, 40, 0.4);
+            border-radius: 50%;
+            color: #E83628;
+            transition: all 0.3s;
+            font-size: 1.4rem;
+            line-height: 1;
+        }
+
+        .social-links a:hover {
+            background: #E83628;
+            color: white;
+            transform: translateY(-3px);
+        }
+
+        .newsletter-form {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .newsletter-form input {
+            flex-grow: 1;
+            padding: 0.9rem 1rem;
+            border: 1.5px solid rgba(232, 54, 40, 0.4);
+            background: #1a1a1a;
+            color: #fff;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .newsletter-form input:focus {
+            outline: none;
+            border-color: #E83628;
+            box-shadow: 0 0 12px rgba(232, 54, 40, 0.2);
+        }
+
+        .newsletter-form input::placeholder {
+            color: #666;
+        }
+
+        .newsletter-form button {
+            padding: 0.9rem 2rem;
+            background: linear-gradient(135deg, #E83628, #c41e1e);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+            box-shadow: 0 4px 12px rgba(232, 54, 40, 0.3);
+        }
+
+        .newsletter-form button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(232, 54, 40, 0.4);
+        }
+
+        .footer-bottom {
+            text-align: center;
+            padding-top: 2.5rem;
+            border-top: 1px solid rgba(232, 54, 40, 0.1);
+            color: #999;
+            font-size: 0.9rem;
+            line-height: 1.8;
+        }
+
+        @media (max-width: 768px) {
+            .section-title {
+                font-size: 1.5rem;
+            }
+
+            nav ul {
+                gap: 1.5rem;
+                font-size: 0.85rem;
+            }
+
+            .playlist-container {
+                max-width: 100%;
+            }
+
+            .now-playing {
+                flex-direction: column;
+                gap: 1rem;
+                padding: 1rem;
+            }
+
+            .now-playing-artwork {
+                width: 180px;
+                height: 180px;
+                font-size: 3rem;
+                padding: 1.5rem;
+            }
+
+            .now-playing-beat {
+                font-size: 1.2rem;
+            }
+
+            .beat-info-grid {
+                max-width: 100%;
+            }
+
+            .progress-bar {
+                height: 40px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="beats.html" class="active">Beats</a></li>
+            <li id="adminNavLink" style="display: none;"><a href="admin.html">Admin</a></li>
+        </ul>
+    </nav>
+
+    <script>
+        if (localStorage.getItem('adminToken')) {
+            document.getElementById('adminNavLink').style.display = 'block';
+        }
+    </script>
+
+    <div id="modalOverlay" class="modal-overlay">
+        <div class="modal-player">
+            <div class="modal-header">
+                <button class="modal-close-btn" onclick="closeModal()" title="Close">✕</button>
+            </div>
+            <div class="modal-content">
+                <div id="modalPlayerContent">
+                    <div class="now-playing-left">
+                        <div class="now-playing-artwork">♫</div>
+                        <div class="now-playing-title">Now Playing</div>
+                        <div class="now-playing-beat" id="modalNowPlayingTitle">Beat Title 1</div>
+                        <div class="now-playing-genre" id="modalNowPlayingGenre">Hip-Hop</div>
+                        <div style="color: #999; font-size: 0.9rem; margin-bottom: 1.5rem; margin-top: 0.5rem;">Produced by: <span id="modalProducer" style="color: #E83628; font-weight: 600;">Doc Rolds</span></div>
+                        <div class="beat-info-grid">
+                            <div class="beat-info-item">
+                                <div class="beat-info-label">BPM</div>
+                                <div class="beat-info-value" id="modalBeatBPM">92</div>
+                            </div>
+                            <div class="beat-info-item">
+                                <div class="beat-info-label">Key</div>
+                                <div class="beat-info-value" id="modalBeatKey">C Minor</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="progress-container" style="width: 100%; margin-top: 2rem;">
+                        <div class="progress-bar-wrapper">
+                            <span class="progress-time" id="modalCurrentTime">0:00</span>
+                            <div class="progress-bar" id="modalProgressBar">
+                                <canvas id="modalWaveformCanvas"></canvas>
+                            </div>
+                            <span class="progress-time" id="modalProgressTime">2:45</span>
+                        </div>
+                    </div>
+                    <div class="player-controls" style="margin-top: 2rem;">
+                        <button class="player-btn" onclick="previousBeat()" title="Previous">⏮</button>
+                        <button class="player-btn" id="modalPlayPauseBtn" onclick="togglePlayPause()" title="Play/Pause">▶</button>
+                        <button class="player-btn" onclick="nextBeat()" title="Next">⏭</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <main>
+        <section id="beats">
+            <h2 class="section-title">RECENT BEATS</h2>
+            <div class="playlist-container">
+                <div class="now-playing">
+                    <div class="now-playing-left">
+                        <div class="now-playing-artwork">♫</div>
+
+                        <div class="now-playing-title">Now Playing</div>
+                        <div class="now-playing-beat" id="nowPlayingTitle">Beat Title 1</div>
+                        <div class="now-playing-genre" id="nowPlayingGenre">Hip-Hop</div>
+
+                        <div class="beat-info-grid">
+                            <div class="beat-info-item">
+                                <div class="beat-info-label">BPM</div>
+                                <div class="beat-info-value" id="beatBPM">92</div>
+                            </div>
+                            <div class="beat-info-item">
+                                <div class="beat-info-label">Key</div>
+                                <div class="beat-info-value" id="beatKey">C Minor</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="now-playing-right">
+                        <div class="progress-container">
+                            <div class="progress-bar-wrapper">
+                                <span class="progress-time" id="currentTime">0:00</span>
+                                <div class="progress-bar" id="progressBar">
+                                    <canvas id="waveformCanvas"></canvas>
+                                </div>
+                                <span class="progress-time" id="progressTime">2:45</span>
+                            </div>
+                        </div>
+
+                        <div class="player-controls">
+                            <button class="player-btn" onclick="previousBeat()" title="Previous">⏮</button>
+                            <button class="player-btn" id="playPauseBtn" onclick="togglePlayPause()" title="Play/Pause">▶</button>
+                            <button class="player-btn" onclick="nextBeat()" title="Next">⏭</button>
+                        </div>
+                    </div>
+                </div>
+
+                <ul class="playlist" id="playlist">
+                    <li class="playlist-item active" onclick="playBeat(0)" data-index="0">
+                        <div class="playlist-item-icon">
+                            <span class="playlist-item-active">♫</span>
+                        </div>
+                        <div class="playlist-item-content">
+                            <div class="playlist-item-title playlist-item-active-title">Midnight Vibes</div>
+                            <div class="playlist-item-genre">Hip-Hop</div>
+                        </div>
+                        <div class="playlist-item-duration">2:45</div>
+                    </li>
+                    <li class="playlist-item" onclick="playBeat(1)" data-index="1">
+                        <div class="playlist-item-icon">♪</div>
+                        <div class="playlist-item-content">
+                            <div class="playlist-item-title">Bass Trap</div>
+                            <div class="playlist-item-genre">Trap</div>
+                        </div>
+                        <div class="playlist-item-duration">3:00</div>
+                    </li>
+                    <li class="playlist-item" onclick="playBeat(2)" data-index="2">
+                        <div class="playlist-item-icon">♪</div>
+                        <div class="playlist-item-content">
+                            <div class="playlist-item-title">Smooth Flows</div>
+                            <div class="playlist-item-genre">R&B</div>
+                        </div>
+                        <div class="playlist-item-duration">3:20</div>
+                    </li>
+                    <li class="playlist-item" onclick="playBeat(3)" data-index="3">
+                        <div class="playlist-item-icon">♪</div>
+                        <div class="playlist-item-content">
+                            <div class="playlist-item-title">Electric Dreams</div>
+                            <div class="playlist-item-genre">Pop</div>
+                        </div>
+                        <div class="playlist-item-duration">3:30</div>
+                    </li>
+                    <li class="playlist-item" onclick="playBeat(4)" data-index="4">
+                        <div class="playlist-item-icon">♪</div>
+                        <div class="playlist-item-content">
+                            <div class="playlist-item-title">Dark Atmosphere</div>
+                            <div class="playlist-item-genre">Hip-Hop</div>
+                        </div>
+                        <div class="playlist-item-duration">2:55</div>
+                    </li>
+                    <li class="playlist-item" onclick="playBeat(5)" data-index="5">
+                        <div class="playlist-item-icon">♪</div>
+                        <div class="playlist-item-content">
+                            <div class="playlist-item-title">Future Bounce</div>
+                            <div class="playlist-item-genre">Trap</div>
+                        </div>
+                        <div class="playlist-item-duration">3:10</div>
+                    </li>
+                    <li class="playlist-item" onclick="playBeat(6)" data-index="6">
+                        <div class="playlist-item-icon">♪</div>
+                        <div class="playlist-item-content">
+                            <div class="playlist-item-title">Soulful Journey</div>
+                            <div class="playlist-item-genre">R&B</div>
+                        </div>
+                        <div class="playlist-item-duration">3:40</div>
+                    </li>
+                    <li class="playlist-item" onclick="playBeat(7)" data-index="7">
+                        <div class="playlist-item-icon">♪</div>
+                        <div class="playlist-item-content">
+                            <div class="playlist-item-title">Neon Lights</div>
+                            <div class="playlist-item-genre">Synthwave</div>
+                        </div>
+                        <div class="playlist-item-duration">3:15</div>
+                    </li>
+                    <li class="playlist-item" onclick="playBeat(8)" data-index="8">
+                        <div class="playlist-item-icon">♪</div>
+                        <div class="playlist-item-content">
+                            <div class="playlist-item-title">Urban Pulse</div>
+                            <div class="playlist-item-genre">Hip-Hop</div>
+                        </div>
+                        <div class="playlist-item-duration">3:05</div>
+                    </li>
+                    <li class="playlist-item" onclick="playBeat(9)" data-index="9">
+                        <div class="playlist-item-icon">♪</div>
+                        <div class="playlist-item-content">
+                            <div class="playlist-item-title">Cloud Nine</div>
+                            <div class="playlist-item-genre">Lo-Fi</div>
+                        </div>
+                        <div class="playlist-item-duration">4:00</div>
+                    </li>
+                </ul>
+            </div>
+        </section>
+    </main>
+
+    <div id="fixedPlayer" class="fixed-player">
+        <div class="fixed-player-content">
+            <div class="fixed-player-controls">
+                <button class="fixed-player-btn" onclick="previousBeat()" title="Previous">⏮</button>
+                <button class="fixed-player-btn" id="fixedPlayPauseBtn" onclick="togglePlayPause()" title="Play/Pause">▶</button>
+                <button class="fixed-player-btn" onclick="nextBeat()" title="Next">⏭</button>
+                <button class="fixed-player-btn" onclick="openModal()" title="Open Player" style="border-color: #E83628; color: #E83628;">⬆</button>
+            </div>
+            <div class="fixed-player-artwork">♫</div>
+            <div class="fixed-player-info">
+                <div class="fixed-player-title" id="fixedPlayerTitle">Beat Title</div>
+                <div class="fixed-player-meta">
+                    <span class="fixed-player-genre" id="fixedPlayerGenre">Genre</span>
+                    <span class="fixed-player-bpm">BPM: <span id="fixedPlayerBPM">92</span></span>
+                </div>
+            </div>
+            <div class="fixed-player-progress">
+                <span class="progress-time" id="fixedCurrentTime">0:00</span>
+                <div class="progress-bar" id="fixedProgressBar">
+                    <canvas id="fixedWaveformCanvas"></canvas>
+                </div>
+                <span class="progress-time" id="fixedProgressTime">2:45</span>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="footer-content">
+            <div class="footer-section">
+                <p style="line-height: 1.6; color: #aaa; font-size: 0.95rem;">Connect with Doc Rolds on social media</p>
+                <div class="social-links">
+                    <a href="https://instagram.com" target="_blank" title="Instagram"><i class="fab fa-instagram"></i></a>
+                    <a href="https://facebook.com" target="_blank" title="Facebook"><i class="fab fa-facebook"></i></a>
+                    <a href="https://youtube.com" target="_blank" title="YouTube"><i class="fab fa-youtube"></i></a>
+                    <a href="https://tiktok.com" target="_blank" title="TikTok"><i class="fab fa-tiktok"></i></a>
+                    <a href="https://x.com" target="_blank" title="X"><i class="fab fa-x"></i></a>
+                    <a href="https://discord.gg" target="_blank" title="Discord"><i class="fab fa-discord"></i></a>
+                </div>
+
+                <div style="margin-top: 2.5rem;">
+                    <h3>Subscribe</h3>
+                    <p style="line-height: 1.6; color: #aaa; font-size: 0.95rem; margin-bottom: 1rem;">Get updates on new beats and services.</p>
+                    <form class="newsletter-form" onsubmit="handleNewsletterSignup(event)">
+                        <input type="email" placeholder="your@email.com" required>
+                        <button type="submit">Subscribe</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <p>&copy; 2025 Doc Rolds. All rights reserved. Dreams Over Careers.</p>
+            <p style="margin-top: 0.5rem; font-size: 0.85rem;">Crafted with passion for independent artists</p>
+        </div>
+    </footer>
+
+    <script src="beats.js"></script>
+</body>
+</html>

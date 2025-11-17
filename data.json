@@ -1,0 +1,97 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "admin",
+      "password": "$2a$10$c2OVv4yR6E5x1/YE8qALZuisav/kS7swY1JJQq7kQ6.vQWSEzbNVO",
+      "email": "admin@docrolds.com",
+      "role": "admin",
+      "createdAt": "2025-11-15T21:07:33.560Z"
+    }
+  ],
+  "beats": [
+    {
+      "id": 1,
+      "title": "Beat Title 1",
+      "genre": "Hip-Hop",
+      "category": "Hip-Hop",
+      "bpm": 92,
+      "key": "C Minor",
+      "duration": 165,
+      "price": 29.99,
+      "audioFile": null,
+      "createdAt": "2025-11-15T21:07:33.561Z"
+    },
+    {
+      "id": 2,
+      "title": "Beat Title 2",
+      "genre": "Trap",
+      "category": "Trap",
+      "bpm": 140,
+      "key": "A Minor",
+      "duration": 180,
+      "price": 39.99,
+      "audioFile": null,
+      "createdAt": "2025-11-15T21:07:33.561Z"
+    },
+    {
+      "id": 3,
+      "title": "Beat Title 3",
+      "genre": "R&B",
+      "category": "R&B",
+      "bpm": 95,
+      "key": "F Major",
+      "duration": 200,
+      "price": 34.99,
+      "audioFile": null,
+      "createdAt": "2025-11-15T21:07:33.561Z"
+    },
+    {
+      "id": 4,
+      "title": "Beat Title 4",
+      "genre": "Pop",
+      "category": "Pop",
+      "bpm": 120,
+      "key": "G Major",
+      "duration": 210,
+      "price": 44.99,
+      "audioFile": null,
+      "createdAt": "2025-11-15T21:07:33.561Z"
+    }
+  ],
+  "photos": [
+    {
+      "id": 1,
+      "name": "Nully Beats",
+      "role": "[\"producer\"]",
+      "credits": "[\"Icewear Vezzo\",\"Hotboii\"]",
+      "category": "team",
+      "description": "",
+      "photoFile": "uploads/photos/team/1763240910857-DSC03658-processed.webp",
+      "displayOnHome": true,
+      "createdAt": "2025-11-15T21:08:30.956Z"
+    },
+    {
+      "id": 2,
+      "name": "Doc Rolds",
+      "role": "[\"engineer\"]",
+      "credits": "[\"Plies\",\"Icewear\",\"Hotboii\",\"Flogo\"]",
+      "category": "team",
+      "description": "",
+      "photoFile": "uploads/photos/team/1763240960760-IMG_1854-processed.webp",
+      "displayOnHome": true,
+      "createdAt": "2025-11-15T21:09:20.871Z"
+    },
+    {
+      "id": 3,
+      "name": "Jerome Grace",
+      "role": "[\"Music Publishing CEO @ProducerTour\"]",
+      "credits": "[]",
+      "category": "team",
+      "description": "",
+      "photoFile": "uploads/photos/team/1763241581686-IMG_1677-processed.webp",
+      "displayOnHome": true,
+      "createdAt": "2025-11-15T21:19:41.754Z"
+    }
+  ]
+}
