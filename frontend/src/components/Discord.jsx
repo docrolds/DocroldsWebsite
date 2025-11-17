@@ -14,7 +14,8 @@ function Discord() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    fetch('http://localhost:3000/api/content')
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+    fetch(`${apiUrl}/content`)
       .then(res => res.json())
       .then(data => {
         setDiscordContent(data.discord);
@@ -31,7 +32,8 @@ function Discord() {
   const handleSave = async () => {
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/content/discord', {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+      const response = await fetch(`${apiUrl}/content/discord`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

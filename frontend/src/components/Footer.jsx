@@ -11,7 +11,8 @@ function Footer() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    fetch('http://localhost:3000/api/content')
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+    fetch(`${apiUrl}/content`)
       .then(res => res.json())
       .then(data => {
         setFooterContent(data.footer);
