@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doc Rolds - Admin Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0f1419;
+            color: #e0e0e0;
+            overflow-x: hidden;
+        }
+
+        .dashboard-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 240px;
+            background: #1a1f26;
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            z-index: 100;
+        }
+
+        .sidebar-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .sidebar-logo {
+            font-size: 1.8rem;
+            color: #E83628;
+        }
+
+        .sidebar-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            padding: 1rem 0;
+            overflow-y: auto;
+        }
+
+        .nav-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .nav-section-title {
+            padding: 0.5rem 1.5rem;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: #6b7280;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .nav-item {
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: #9ca3af;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-item:hover {
+            background: rgba(232, 54, 40, 0.05);
+            color: #E83628;
+        }
+
+        .nav-item.active {
+            background: rgba(232, 54, 40, 0.1);
+            color: #E83628;
+            border-left-color: #E83628;
+        }
+
+        .nav-item i {
+            width: 20px;
+            font-size: 1.1rem;
+        }
+
+        .main-content {
+            flex: 1;
+            margin-left: 240px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .top-nav {
+            background: #0f1419;
+            border-bottom: 1px solid rgba(232, 54, 40, 0.2);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            gap: 3rem;
+            position: sticky;
+            top: 0;
+            z-index: 51;
+            margin-left: 240px;
+        }
+
+        .top-nav ul {
+            list-style: none;
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .top-nav a {
+            color: #e0e0e0;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            transition: color 0.2s;
+        }
+
+        .top-nav a:hover {
+            color: #E83628;
+        }
+
+        .top-nav a.active {
+            color: #E83628;
+            border-bottom: 2px solid #E83628;
+            padding-bottom: 2px;
+        }
+
+        .topbar {
+            background: #1a1f26;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 55px;
+            z-index: 50;
+        }
+
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 1rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .user-profile:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #E83628, #ff6b47);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+
+        .user-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-name {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .user-role {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+
+        .content-area {
+            padding: 2rem;
+            flex: 1;
+        }
+
+        .page-header {
+            margin-bottom: 2rem;
+        }
+
+        .page-title {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 0.5rem;
+        }
+
+        .page-subtitle {
+            color: #9ca3af;
+            font-size: 0.9rem;
+        }
+
+        .content-section {
+            display: none;
+        }
+
+        .content-section.active {
+            display: block;
+        }
+
+        .card {
+            background: #1a1f26;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #E83628, #c41e1e);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(232, 54, 40, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: #e0e0e0;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+        }
+
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.2);
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 0.75rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #9ca3af;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        td {
+            padding: 1rem 0.75rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            color: #e0e0e0;
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .badge-role {
+            padding: 0.25rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .badge-admin {
+            background: rgba(232, 54, 40, 0.1);
+            color: #E83628;
+        }
+
+        .badge-user {
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
+        }
+
+        .action-btns {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .action-btn {
+            padding: 0.4rem 0.6rem;
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            color: #9ca3af;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .action-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: #E83628;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #1a1f26;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .modal-close {
+            background: transparent;
+            border: none;
+            color: #9ca3af;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close:hover {
+            color: #E83628;
+        }
+
+        .form-group {
+            margin-bottom: 1.2rem;
+        }
+
+        .form-label {
+            display: block;
+            color: #9ca3af;
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .form-input, .form-select {
+            width: 100%;
+            padding: 0.7rem;
+            background: #0f1419;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            color: #e0e0e0;
+            font-size: 0.9rem;
+        }
+
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: #E83628;
+        }
+
+        .form-file {
+            width: 100%;
+            padding: 0.7rem;
+            background: #0f1419;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            color: #e0e0e0;
+            font-size: 0.9rem;
+        }
+
+        .modal-footer {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: flex-end;
+            margin-top: 1.5rem;
+        }
+
+        .logout-btn {
+            padding: 0.5rem 1rem;
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .team-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .team-card {
+            background: linear-gradient(135deg, #1a1f26 0%, #0f1419 100%);
+            border: 2px dashed rgba(232, 54, 40, 0.3);
+            border-radius: 12px;
+            padding: 2rem 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 280px;
+        }
+
+        .team-card:hover {
+            border-color: rgba(232, 54, 40, 0.6);
+            background: linear-gradient(135deg, #252b32 0%, #1a1f26 100%);
+            transform: translateY(-4px);
+        }
+
+        .team-card-add {
+            font-size: 3rem;
+            color: rgba(232, 54, 40, 0.5);
+            margin-bottom: 1rem;
+            transition: all 0.3s;
+        }
+
+        .team-card:hover .team-card-add {
+            color: #E83628;
+            transform: scale(1.2);
+        }
+
+        .team-card-add-text {
+            color: #9ca3af;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .team-card-member {
+            background: #1a1f26;
+            border: 1px solid rgba(232, 54, 40, 0.2);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            min-height: 280px;
+            position: relative;
+        }
+
+        .team-card-member:hover {
+            border-color: rgba(232, 54, 40, 0.5);
+            background: linear-gradient(135deg, #252b32 0%, #1a1f26 100%);
+            transform: translateY(-4px);
+        }
+
+        .team-member-photo {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #E83628, #c41e1e);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            margin-bottom: 0.5rem;
+        }
+
+        .team-member-photo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .team-member-info {
+            text-align: center;
+            flex: 1;
+        }
+
+        .team-member-name {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 0.25rem;
+        }
+
+        .team-member-role {
+            color: #E83628;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .team-member-credits {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            justify-content: center;
+            margin-bottom: 0.75rem;
+        }
+
+        .team-member-credit-tag {
+            background: #E83628;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 500;
+        }
+
+        .team-card-actions {
+            position: absolute;
+            bottom: 0.75rem;
+            display: flex;
+            gap: 0.5rem;
+            width: 100%;
+            justify-content: center;
+            padding: 0 0.5rem;
+        }
+
+        .team-card-action-btn {
+            background: transparent;
+            border: 1px solid rgba(232, 54, 40, 0.3);
+            color: #9ca3af;
+            padding: 0.4rem 0.8rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: all 0.2s;
+        }
+
+        .team-card-action-btn:hover {
+            background: rgba(232, 54, 40, 0.2);
+            color: #E83628;
+            border-color: rgba(232, 54, 40, 0.6);
+        }
+
+        .modal-drag-zone {
+            border: 2px dashed rgba(232, 54, 40, 0.3);
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 1rem;
+            background: rgba(232, 54, 40, 0.02);
+        }
+
+        .modal-drag-zone:hover {
+            border-color: rgba(232, 54, 40, 0.6);
+            background: rgba(232, 54, 40, 0.05);
+        }
+
+        .modal-drag-zone.drag-over {
+            border-color: #E83628;
+            background: rgba(232, 54, 40, 0.15);
+        }
+
+        .modal-drag-zone-text {
+            color: #9ca3af;
+            font-size: 0.9rem;
+        }
+
+        .modal-drag-zone-preview {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin: 0 auto 0.5rem;
+            background: rgba(232, 54, 40, 0.1);
+        }
+
+        .credits-input-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .credits-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: #E83628;
+            color: white;
+            padding: 0.4rem 0.8rem;
+            border-radius: 16px;
+            font-size: 0.85rem;
+            width: fit-content;
+            animation: slideIn 0.2s ease;
+        }
+
+        .credits-tag-remove {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            padding: 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .credits-tag-remove:hover {
+            color: #ffd700;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">🎵</div>
+                <div class="sidebar-title">Doc Rolds</div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Main</div>
+                    <div class="nav-item active" data-section="dashboard">
+                        <i class="fas fa-home"></i>
+                        <span>Dashboard</span>
+                    </div>
+                </div>
+                <div class="nav-section">
+                    <div class="nav-section-title">Management</div>
+                    <div class="nav-item" data-section="beats">
+                        <i class="fas fa-music"></i>
+                        <span>Beats</span>
+                    </div>
+                    <div class="nav-item" data-section="team">
+                        <i class="fas fa-users"></i>
+                        <span>The Team</span>
+                    </div>
+                    <div class="nav-item" data-section="users">
+                        <i class="fas fa-user-cog"></i>
+                        <span>Users</span>
+                    </div>
+                </div>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <nav class="top-nav">
+                <ul>
+                    <li><a href="index.html">HOME</a></li>
+                    <li><a href="beats.html">BEATS</a></li>
+                    <li><a href="login.html" onclick="logout(); return false;">LOGOUT</a></li>
+                </ul>
+            </nav>
+            <div class="topbar">
+                <div class="topbar-actions" style="margin-left: auto;">
+                    <div class="user-profile" id="userProfile">
+                        <div class="user-avatar">A</div>
+                        <div class="user-info">
+                            <div class="user-name">Admin</div>
+                            <div class="user-role">Administrator</div>
+                        </div>
+                    </div>
+                    <button class="logout-btn" onclick="logout()">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="content-area">
+                <section class="content-section active" id="dashboard-section">
+                    <div class="page-header">
+                        <h1 class="page-title">Dashboard</h1>
+                        <p class="page-subtitle">Welcome back to your admin panel</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">Quick Stats</h2>
+                        </div>
+                        <p style="color: #9ca3af;">Dashboard overview coming soon...</p>
+                    </div>
+                </section>
+
+                <section class="content-section" id="beats-section">
+                    <div class="page-header">
+                        <h1 class="page-title">Beats Management</h1>
+                        <p class="page-subtitle">Manage your beat library</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">All Beats</h2>
+                            <button class="btn btn-primary" onclick="openAddBeatModal()">
+                                <i class="fas fa-plus"></i>
+                                Add Beat
+                            </button>
+                        </div>
+                        <div class="table-container">
+                            <table id="beatsTable">
+                                <thead>
+                                    <tr>
+                                        <th>Title</th>
+                                        <th>Genre</th>
+                                        <th>BPM</th>
+                                        <th>Key</th>
+                                        <th>Price</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="beatsTableBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="content-section" id="team-section">
+                    <div class="page-header">
+                        <h1 class="page-title">The Team</h1>
+                        <p class="page-subtitle">Manage your team members</p>
+                    </div>
+                    <div class="team-grid" id="teamGrid">
+                    </div>
+                </section>
+
+                <section class="content-section" id="users-section">
+                    <div class="page-header">
+                        <h1 class="page-title">Users Management</h1>
+                        <p class="page-subtitle">Manage user accounts and permissions</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">All Users</h2>
+                            <button class="btn btn-primary" onclick="openAddUserModal()">
+                                <i class="fas fa-plus"></i>
+                                Add User
+                            </button>
+                        </div>
+                        <div class="table-container">
+                            <table id="usersTable">
+                                <thead>
+                                    <tr>
+                                        <th>Username</th>
+                                        <th>Email</th>
+                                        <th>Role</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="usersTableBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <div class="modal" id="userModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="userModalTitle">Add User</h2>
+                <button class="modal-close" onclick="closeUserModal()">×</button>
+            </div>
+            <form id="userForm">
+                <input type="hidden" id="userId">
+                <div class="form-group">
+                    <label class="form-label">Username</label>
+                    <input type="text" class="form-input" id="username" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-input" id="email" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-input" id="password">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Role</label>
+                    <select class="form-select" id="role">
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeUserModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal" id="beatModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="beatModalTitle">Add Beat</h2>
+                <button class="modal-close" onclick="closeBeatModal()">×</button>
+            </div>
+            <form id="beatForm">
+                <input type="hidden" id="beatId">
+                <div class="form-group">
+                    <label class="form-label">Title</label>
+                    <input type="text" class="form-input" id="beatTitle" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Genre</label>
+                    <input type="text" class="form-input" id="beatGenre" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Category</label>
+                    <input type="text" class="form-input" id="beatCategory" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">BPM</label>
+                    <input type="number" class="form-input" id="beatBpm" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Key</label>
+                    <input type="text" class="form-input" id="beatKey" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Duration (seconds)</label>
+                    <input type="number" class="form-input" id="beatDuration" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Price ($)</label>
+                    <input type="number" step="0.01" class="form-input" id="beatPrice" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Audio File</label>
+                    <input type="file" class="form-file" id="beatAudioFile" accept="audio/*">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Cover Art</label>
+                    <input type="file" class="form-file" id="beatCoverArt" accept="image/*">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeBeatModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal" id="teamMemberModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="teamMemberModalTitle">Add Team Member</h2>
+                <button class="modal-close" onclick="closeTeamMemberModal()">×</button>
+            </div>
+            <form id="teamMemberForm">
+                <input type="hidden" id="teamMemberId">
+                <input type="hidden" id="teamMemberPhotoPath">
+                
+                <div class="form-group">
+                    <label class="form-label">Photo</label>
+                    <div class="modal-drag-zone" id="dragZone">
+                        <img id="photoPreview" class="modal-drag-zone-preview" style="display: none;">
+                        <div id="dragZoneContent">
+                            <div class="modal-drag-zone-text">Drag and drop a photo here or click to upload</div>
+                        </div>
+                    </div>
+                    <input type="file" id="teamMemberPhoto" accept="image/*" style="display: none;">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Name</label>
+                    <input type="text" class="form-input" id="teamMemberName" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Roles (Select all that apply)</label>
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="roleArtist" value="artist">
+                            <span>Artist</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="roleProducer" value="producer">
+                            <span>Producer</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="roleEngineer" value="engineer">
+                            <span>Engineer</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="roleConsultant" value="consultant">
+                            <span>Consultant</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="roleLawyer" value="lawyer">
+                            <span>Lawyer</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="roleOther" value="other" onchange="toggleCustomRole()">
+                            <span>Other</span>
+                        </label>
+                    </div>
+                    <input type="text" class="form-select" id="customRoleInput" placeholder="Enter custom role" style="display: none; margin-top: 8px;">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Credits</label>
+                    <div class="credits-input-container">
+                        <input type="text" class="form-input" id="creditInput" placeholder="Type credit and press Enter">
+                        <div id="creditsList" style="display: flex; flex-wrap: wrap; gap: 0.5rem;"></div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Bio</label>
+                    <textarea class="form-input" id="teamMemberBio" style="resize: vertical; min-height: 80px;" placeholder="Team member bio (optional)"></textarea>
+                </div>
+
+                <div class="form-group" style="display: flex; align-items: center; gap: 0.75rem;">
+                    <input type="checkbox" id="displayOnHome" style="width: 18px; height: 18px; cursor: pointer;">
+                    <label for="displayOnHome" class="form-label" style="margin: 0; cursor: pointer;">Show on Home Page Under "Meet the Team"</label>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeTeamMemberModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="admin.js"></script>
+</body>
+</html>
