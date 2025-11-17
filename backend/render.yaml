@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: docrolds-api
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: JWT_SECRET
+        generateValue: true
+    autoDeploy: true
