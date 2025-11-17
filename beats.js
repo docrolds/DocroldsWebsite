@@ -1,5 +1,5 @@
 let beats = [];
-const API_URL = 'http://localhost:3000/api';
+const API_URL = window.VITE_API_URL || 'http://localhost:3000/api';
 let audioElement = new Audio();
 let audioContext = null;
 let analyser = null;

@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:3000/api';
+const API_URL = window.VITE_API_URL || 'http://localhost:3000/api';
 let currentEditUserId = null;
 let currentEditBeatId = null;
 
