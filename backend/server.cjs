@@ -6,11 +6,13 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
+const mongoose = require('mongoose');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-const DATA_FILE = 'data.json';
+const MONGODB_URI = process.env.MONGODB_URI;
 
 app.use(cors());
 app.use(express.json());
@@ -20,23 +22,67 @@ if (!fs.existsSync('uploads')) {
     fs.mkdirSync('uploads');
 }
 
-const loadData = () => {
+mongoose.connect(MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+}).then(() => {
+    console.log('Connected to MongoDB');
+}).catch(err => {
+    console.error('MongoDB connection error:', err);
+    process.exit(1);
+});
+
+const userSchema = new mongoose.Schema({
+    username: { type: String, unique: true, required: true },
+    email: String,
+    password: { type: String, required: true },
+    role: { type: String, default: 'user' },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const beatSchema = new mongoose.Schema({
+    title: String,
+    genre: String,
+    category: String,
+    bpm: Number,
+    key: String,
+    duration: Number,
+    price: Number,
+    audioFile: String,
+    coverArt: String,
+    createdAt: { type: Date, default: Date.now }
+});
+
+const photoSchema = new mongoose.Schema({
+    name: String,
+    role: String,
+    credits: String,
+    category: String,
+    description: String,
+    photoFile: String,
+    displayOnHome: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const User = mongoose.model('User', userSchema);
+const Beat = mongoose.model('Beat', beatSchema);
+const Photo = mongoose.model('Photo', photoSchema);
+
+const initializeDefaultData = async () => {
     try {
-        if (fs.existsSync(DATA_FILE)) {
-            const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-            return data;
+        const adminExists = await User.findOne({ username: 'admin' });
+        if (!adminExists) {
+            const hashedPassword = await bcrypt.hash('admin123', 10);
+            await User.create({
+                username: 'admin',
+                email: 'admin@docrolds.com',
+                password: hashedPassword,
+                role: 'admin'
+            });
+            console.log('Default admin user created');
         }
     } catch (error) {
-        console.error('Error loading data:', error);
-    }
-    return null;
-};
-
-const saveData = (data) => {
-    try {
-        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
-    } catch (error) {
-        console.error('Error saving data:', error);
+        console.error('Error initializing default data:', error);
     }
 };
 
@@ -116,75 +162,6 @@ async function processCoverArt(filePath) {
     }
 }
 
-const defaultData = {
-    users: [
-        {
-            id: 1,
-            username: 'admin',
-            password: bcrypt.hashSync('admin123', 10),
-            email: 'admin@docrolds.com',
-            role: 'admin',
-            createdAt: new Date().toISOString()
-        }
-    ],
-    beats: [
-        {
-            id: 1,
-            title: 'Beat Title 1',
-            genre: 'Hip-Hop',
-            category: 'Hip-Hop',
-            bpm: 92,
-            key: 'C Minor',
-            duration: 165,
-            price: 29.99,
-            audioFile: null,
-            createdAt: new Date().toISOString()
-        },
-        {
-            id: 2,
-            title: 'Beat Title 2',
-            genre: 'Trap',
-            category: 'Trap',
-            bpm: 140,
-            key: 'A Minor',
-            duration: 180,
-            price: 39.99,
-            audioFile: null,
-            createdAt: new Date().toISOString()
-        },
-        {
-            id: 3,
-            title: 'Beat Title 3',
-            genre: 'R&B',
-            category: 'R&B',
-            bpm: 95,
-            key: 'F Major',
-            duration: 200,
-            price: 34.99,
-            audioFile: null,
-            createdAt: new Date().toISOString()
-        },
-        {
-            id: 4,
-            title: 'Beat Title 4',
-            genre: 'Pop',
-            category: 'Pop',
-            bpm: 120,
-            key: 'G Major',
-            duration: 210,
-            price: 44.99,
-            audioFile: null,
-            createdAt: new Date().toISOString()
-        }
-    ],
-    photos: []
-};
-
-const persistedData = loadData() || defaultData;
-let users = persistedData.users;
-let beats = persistedData.beats;
-let photos = persistedData.photos;
-
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -203,268 +180,298 @@ const authenticateToken = (req, res, next) => {
 };
 
 app.post('/api/auth/login', async (req, res) => {
-    const { username, password } = req.body;
+    try {
+        const { username, password } = req.body;
 
-    const user = users.find(u => u.username === username);
-    if (!user) {
-        return res.status(401).json({ message: 'Invalid credentials' });
-    }
-
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-        return res.status(401).json({ message: 'Invalid credentials' });
-    }
-
-    const token = jwt.sign(
-        { id: user.id, username: user.username, role: user.role },
-        JWT_SECRET,
-        { expiresIn: '24h' }
-    );
-
-    res.json({
-        token,
-        user: {
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            role: user.role
+        const user = await User.findOne({ username });
+        if (!user) {
+            return res.status(401).json({ message: 'Invalid credentials' });
         }
-    });
+
+        const validPassword = await bcrypt.compare(password, user.password);
+        if (!validPassword) {
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
+
+        const token = jwt.sign(
+            { id: user._id, username: user.username, role: user.role },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        res.json({
+            token,
+            user: {
+                id: user._id,
+                username: user.username,
+                email: user.email,
+                role: user.role
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
 });
 
-app.get('/api/users', authenticateToken, (req, res) => {
-    const usersWithoutPasswords = users.map(({ password, ...user }) => user);
-    res.json(usersWithoutPasswords);
+app.get('/api/users', authenticateToken, async (req, res) => {
+    try {
+        const users = await User.find().select('-password');
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
 });
 
 app.post('/api/users', authenticateToken, async (req, res) => {
-    const { username, email, password, role } = req.body;
+    try {
+        const { username, email, password, role } = req.body;
 
-    if (users.find(u => u.username === username)) {
-        return res.status(400).json({ message: 'Username already exists' });
+        const existingUser = await User.findOne({ username });
+        if (existingUser) {
+            return res.status(400).json({ message: 'Username already exists' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUser = new User({
+            username,
+            email,
+            password: hashedPassword,
+            role: role || 'user'
+        });
+
+        await newUser.save();
+        const userResponse = newUser.toObject();
+        delete userResponse.password;
+        res.status(201).json(userResponse);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
     }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = {
-        id: users.length + 1,
-        username,
-        email,
-        password: hashedPassword,
-        role: role || 'user',
-        createdAt: new Date().toISOString()
-    };
-
-    users.push(newUser);
-    saveData({ users, beats, photos });
-    const { password: _, ...userWithoutPassword } = newUser;
-    res.status(201).json(userWithoutPassword);
 });
 
 app.put('/api/users/:id', authenticateToken, async (req, res) => {
-    const userId = parseInt(req.params.id);
-    const { username, email, password, role } = req.body;
+    try {
+        const { username, email, password, role } = req.body;
+        const user = await User.findById(req.params.id);
 
-    const userIndex = users.findIndex(u => u.id === userId);
-    if (userIndex === -1) {
-        return res.status(404).json({ message: 'User not found' });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        if (username && username !== user.username) {
+            const existing = await User.findOne({ username });
+            if (existing) {
+                return res.status(400).json({ message: 'Username already exists' });
+            }
+            user.username = username;
+        }
+
+        if (email) user.email = email;
+        if (password) user.password = await bcrypt.hash(password, 10);
+        if (role) user.role = role;
+
+        await user.save();
+        const userResponse = user.toObject();
+        delete userResponse.password;
+        res.json(userResponse);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
     }
-
-    if (username && users.find(u => u.username === username && u.id !== userId)) {
-        return res.status(400).json({ message: 'Username already exists' });
-    }
-
-    if (username) users[userIndex].username = username;
-    if (email) users[userIndex].email = email;
-    if (password) users[userIndex].password = await bcrypt.hash(password, 10);
-    if (role) users[userIndex].role = role;
-
-    const { password: _, ...userWithoutPassword } = users[userIndex];
-    saveData({ users, beats, photos });
-    res.json(userWithoutPassword);
 });
 
-app.delete('/api/users/:id', authenticateToken, (req, res) => {
-    const userId = parseInt(req.params.id);
-    const userIndex = users.findIndex(u => u.id === userId);
-
-    if (userIndex === -1) {
-        return res.status(404).json({ message: 'User not found' });
+app.delete('/api/users/:id', authenticateToken, async (req, res) => {
+    try {
+        const user = await User.findByIdAndDelete(req.params.id);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        res.json({ message: 'User deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
     }
-
-    users.splice(userIndex, 1);
-    saveData({ users, beats, photos });
-    res.json({ message: 'User deleted successfully' });
 });
 
-app.get('/api/beats', (req, res) => {
-    res.json(beats);
+app.get('/api/beats', async (req, res) => {
+    try {
+        const beats = await Beat.find();
+        res.json(beats);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
 });
 
 app.post('/api/beats', authenticateToken, upload.array('files', 2), async (req, res) => {
-    const { title, genre, category, bpm, key, duration, price } = req.body;
+    try {
+        const { title, genre, category, bpm, key, duration, price } = req.body;
 
-    let audioFile = null;
-    let coverArt = null;
+        let audioFile = null;
+        let coverArt = null;
 
-    if (req.files) {
-        for (const file of req.files) {
-            if (file.mimetype.startsWith('audio/')) {
-                audioFile = `/uploads/${file.filename}`;
-            } else if (file.mimetype.startsWith('image/')) {
-                const uploadPath = `uploads/covers/${file.filename}`;
-                const processedPath = await processCoverArt(uploadPath);
-                coverArt = processedPath.replace(/\\/g, '/');
+        if (req.files) {
+            for (const file of req.files) {
+                if (file.mimetype.startsWith('audio/')) {
+                    audioFile = `/uploads/${file.filename}`;
+                } else if (file.mimetype.startsWith('image/')) {
+                    const uploadPath = `uploads/covers/${file.filename}`;
+                    const processedPath = await processCoverArt(uploadPath);
+                    coverArt = processedPath.replace(/\\/g, '/');
+                }
             }
         }
+
+        const newBeat = new Beat({
+            title,
+            genre,
+            category,
+            bpm: parseInt(bpm),
+            key,
+            duration: parseInt(duration),
+            price: parseFloat(price),
+            audioFile,
+            coverArt
+        });
+
+        await newBeat.save();
+        res.status(201).json(newBeat);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
     }
-
-    const newBeat = {
-        id: beats.length + 1,
-        title,
-        genre,
-        category,
-        bpm: parseInt(bpm),
-        key,
-        duration: parseInt(duration),
-        price: parseFloat(price),
-        audioFile: audioFile,
-        coverArt: coverArt,
-        createdAt: new Date().toISOString()
-    };
-
-    beats.push(newBeat);
-    saveData({ users, beats, photos });
-    res.status(201).json(newBeat);
 });
 
 app.put('/api/beats/:id', authenticateToken, upload.array('files', 2), async (req, res) => {
-    const beatId = parseInt(req.params.id);
-    const { title, genre, category, bpm, key, duration, price } = req.body;
+    try {
+        const { title, genre, category, bpm, key, duration, price } = req.body;
+        const beat = await Beat.findById(req.params.id);
 
-    const beatIndex = beats.findIndex(b => b.id === beatId);
-    if (beatIndex === -1) {
-        return res.status(404).json({ message: 'Beat not found' });
-    }
+        if (!beat) {
+            return res.status(404).json({ message: 'Beat not found' });
+        }
 
-    if (title) beats[beatIndex].title = title;
-    if (genre) beats[beatIndex].genre = genre;
-    if (category) beats[beatIndex].category = category;
-    if (bpm) beats[beatIndex].bpm = parseInt(bpm);
-    if (key) beats[beatIndex].key = key;
-    if (duration) beats[beatIndex].duration = parseInt(duration);
-    if (price) beats[beatIndex].price = parseFloat(price);
+        if (title) beat.title = title;
+        if (genre) beat.genre = genre;
+        if (category) beat.category = category;
+        if (bpm) beat.bpm = parseInt(bpm);
+        if (key) beat.key = key;
+        if (duration) beat.duration = parseInt(duration);
+        if (price) beat.price = parseFloat(price);
 
-    if (req.files && req.files.length > 0) {
-        for (const file of req.files) {
-            if (file.mimetype.startsWith('audio/')) {
-                beats[beatIndex].audioFile = `/uploads/${file.filename}`;
-            } else if (file.mimetype.startsWith('image/')) {
-                const uploadPath = `uploads/covers/${file.filename}`;
-                const processedPath = await processCoverArt(uploadPath);
-                beats[beatIndex].coverArt = processedPath.replace(/\\/g, '/');
+        if (req.files && req.files.length > 0) {
+            for (const file of req.files) {
+                if (file.mimetype.startsWith('audio/')) {
+                    beat.audioFile = `/uploads/${file.filename}`;
+                } else if (file.mimetype.startsWith('image/')) {
+                    const uploadPath = `uploads/covers/${file.filename}`;
+                    const processedPath = await processCoverArt(uploadPath);
+                    beat.coverArt = processedPath.replace(/\\/g, '/');
+                }
             }
         }
-    }
 
-    saveData({ users, beats, photos });
-    res.json(beats[beatIndex]);
+        await beat.save();
+        res.json(beat);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
 });
 
-app.delete('/api/beats/:id', authenticateToken, (req, res) => {
-    const beatId = parseInt(req.params.id);
-    const beatIndex = beats.findIndex(b => b.id === beatId);
-
-    if (beatIndex === -1) {
-        return res.status(404).json({ message: 'Beat not found' });
+app.delete('/api/beats/:id', authenticateToken, async (req, res) => {
+    try {
+        const beat = await Beat.findByIdAndDelete(req.params.id);
+        if (!beat) {
+            return res.status(404).json({ message: 'Beat not found' });
+        }
+        res.json({ message: 'Beat deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
     }
-
-    beats.splice(beatIndex, 1);
-    saveData({ users, beats, photos });
-    res.json({ message: 'Beat deleted successfully' });
 });
 
-app.get('/api/photos', (req, res) => {
-    res.json(photos);
+app.get('/api/photos', async (req, res) => {
+    try {
+        const photos = await Photo.find();
+        res.json(photos);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
 });
 
 app.post('/api/photos', authenticateToken, upload.single('photoFile'), async (req, res) => {
-    const { name, role, credits, category, description, displayOnHome } = req.body;
+    try {
+        const { name, role, credits, category, description, displayOnHome } = req.body;
 
-    if (!category) {
-        return res.status(400).json({ message: 'Category is required' });
+        if (!category) {
+            return res.status(400).json({ message: 'Category is required' });
+        }
+
+        let photoPath = null;
+        if (req.file) {
+            const uploadPath = `uploads/photos/${category}/${req.file.filename}`;
+            const processedPath = await processTeamPhoto(uploadPath);
+            photoPath = processedPath.replace(/\\/g, '/');
+        }
+
+        const newPhoto = new Photo({
+            name: name || 'Untitled Photo',
+            role: role || '',
+            credits: credits || '',
+            category,
+            description: description || '',
+            photoFile: photoPath,
+            displayOnHome: displayOnHome === 'true' || displayOnHome === true
+        });
+
+        await newPhoto.save();
+        res.status(201).json(newPhoto);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
     }
-
-    let photoPath = null;
-    if (req.file) {
-        const uploadPath = `uploads/photos/${category}/${req.file.filename}`;
-        const processedPath = await processTeamPhoto(uploadPath);
-        photoPath = processedPath.replace(/\\/g, '/');
-    }
-
-    const newPhoto = {
-        id: photos.length + 1,
-        name: name || 'Untitled Photo',
-        role: role || '',
-        credits: credits || '',
-        category: category,
-        description: description || '',
-        photoFile: photoPath,
-        displayOnHome: displayOnHome === 'true' || displayOnHome === true,
-        createdAt: new Date().toISOString()
-    };
-
-    photos.push(newPhoto);
-    saveData({ users, beats, photos });
-    res.status(201).json(newPhoto);
 });
 
 app.put('/api/photos/:id', authenticateToken, upload.single('photoFile'), async (req, res) => {
-    const photoId = parseInt(req.params.id);
-    const { name, role, credits, category, description, displayOnHome } = req.body;
+    try {
+        const { name, role, credits, category, description, displayOnHome } = req.body;
+        const photo = await Photo.findById(req.params.id);
 
-    const photoIndex = photos.findIndex(p => p.id === photoId);
-    if (photoIndex === -1) {
-        return res.status(404).json({ message: 'Photo not found' });
-    }
+        if (!photo) {
+            return res.status(404).json({ message: 'Photo not found' });
+        }
 
-    if (name) photos[photoIndex].name = name;
-    if (role) photos[photoIndex].role = role;
-    if (credits) photos[photoIndex].credits = credits;
-    if (category) photos[photoIndex].category = category;
-    if (description) photos[photoIndex].description = description;
-    if (displayOnHome !== undefined) {
-        photos[photoIndex].displayOnHome = displayOnHome === 'true' || displayOnHome === true;
-    } else {
-        photos[photoIndex].displayOnHome = photos[photoIndex].displayOnHome || false;
-    }
-    
-    if (req.file) {
-        const catToUse = category || photos[photoIndex].category;
-        const uploadPath = `uploads/photos/${catToUse}/${req.file.filename}`;
-        const processedPath = await processTeamPhoto(uploadPath);
-        photos[photoIndex].photoFile = processedPath.replace(/\\/g, '/');
-    }
+        if (name) photo.name = name;
+        if (role) photo.role = role;
+        if (credits) photo.credits = credits;
+        if (category) photo.category = category;
+        if (description) photo.description = description;
+        if (displayOnHome !== undefined) {
+            photo.displayOnHome = displayOnHome === 'true' || displayOnHome === true;
+        }
 
-    saveData({ users, beats, photos });
-    res.json(photos[photoIndex]);
+        if (req.file) {
+            const catToUse = category || photo.category;
+            const uploadPath = `uploads/photos/${catToUse}/${req.file.filename}`;
+            const processedPath = await processTeamPhoto(uploadPath);
+            photo.photoFile = processedPath.replace(/\\/g, '/');
+        }
+
+        await photo.save();
+        res.json(photo);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
 });
 
-app.delete('/api/photos/:id', authenticateToken, (req, res) => {
-    const photoId = parseInt(req.params.id);
-    const photoIndex = photos.findIndex(p => p.id === photoId);
-
-    if (photoIndex === -1) {
-        return res.status(404).json({ message: 'Photo not found' });
+app.delete('/api/photos/:id', authenticateToken, async (req, res) => {
+    try {
+        const photo = await Photo.findByIdAndDelete(req.params.id);
+        if (!photo) {
+            return res.status(404).json({ message: 'Photo not found' });
+        }
+        res.json({ message: 'Photo deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
     }
-
-    photos.splice(photoIndex, 1);
-    saveData({ users, beats, photos });
-    res.json({ message: 'Photo deleted successfully' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+    await initializeDefaultData();
     console.log(`Server running on http://localhost:${PORT}`);
-    console.log('Default admin credentials:');
-    console.log('Username: admin');
-    console.log('Password: admin123');
+    console.log('Connected to MongoDB');
 });
