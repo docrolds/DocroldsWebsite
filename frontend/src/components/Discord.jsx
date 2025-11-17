@@ -14,8 +14,7 @@ function Discord() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-    fetch(`${apiUrl}/content`)
+    fetch('https://doc-rolds-api.onrender.com/api/content')
       .then(res => res.json())
       .then(data => {
         setDiscordContent(data.discord);
@@ -32,8 +31,7 @@ function Discord() {
   const handleSave = async () => {
     try {
       const token = localStorage.getItem('adminToken');
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-      const response = await fetch(`${apiUrl}/content/discord`, {
+      const response = await fetch('https://doc-rolds-api.onrender.com/api/content/discord', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
