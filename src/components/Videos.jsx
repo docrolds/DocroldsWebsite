@@ -15,7 +15,7 @@ function Videos() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    fetch('http://localhost:3000/api/content')
+    fetch('https://doc-rolds-api.onrender.com/api/content')
       .then(res => res.json())
       .then(data => {
         setVideosContent(data.videos);
@@ -56,6 +56,7 @@ function Videos() {
           <div key={index} className="video-card">
             <div className="video-wrapper">
               <iframe 
+                title={`Video ${video.id}`}
                 src={`https://www.youtube.com/embed/${video.id}${video.start ? `?start=${video.start}` : ''}`}
                 allowFullScreen
               ></iframe>
