@@ -14,7 +14,26 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const MONGODB_URI = process.env.MONGODB_URI;
 
-app.use(cors());
+// Define allowed origins for CORS
+const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:3000',
+    'https://docrolds-frontend.vercel.app',
+    'https://www.docrolds.com'
+];
+
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true
+}));
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
@@ -22,15 +41,25 @@ if (!fs.existsSync('uploads')) {
     fs.mkdirSync('uploads');
 }
 
-mongoose.connect(MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-}).then(() => {
-    console.log('Connected to MongoDB');
-}).catch(err => {
-    console.error('MongoDB connection error:', err);
-    process.exit(1);
-});
+let mongoConnected = false;
+
+if (MONGODB_URI) {
+    mongoose.connect(MONGODB_URI, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+        serverSelectionTimeoutMS: 5000,
+        connectTimeoutMS: 5000,
+        socketTimeoutMS: 5000
+    }).then(() => {
+        mongoConnected = true;
+        console.log('Connected to MongoDB');
+    }).catch(err => {
+        console.error('MongoDB connection error:', err.message);
+        console.warn('Continuing without MongoDB - some features may not work');
+    });
+} else {
+    console.warn('No MONGODB_URI set - database features will not work');
+}
 
 const userSchema = new mongoose.Schema({
     username: { type: String, unique: true, required: true },
@@ -290,8 +319,18 @@ app.delete('/api/users/:id', authenticateToken, async (req, res) => {
     }
 });
 
+const mockBeats = [
+    { title: 'Midnight Vibes', genre: 'Hip-Hop', category: 'Hip-Hop', bpm: 92, key: 'C Minor', duration: 165 },
+    { title: 'Bass Trap', genre: 'Trap', category: 'Trap', bpm: 140, key: 'A Minor', duration: 180 },
+    { title: 'Smooth Flows', genre: 'R&B', category: 'R&B', bpm: 95, key: 'F Major', duration: 200 },
+    { title: 'Electric Dreams', genre: 'Pop', category: 'Pop', bpm: 120, key: 'G Major', duration: 210 }
+];
+
 app.get('/api/beats', async (req, res) => {
     try {
+        if (!mongoConnected) {
+            return res.json(mockBeats);
+        }
         const beats = await Beat.find();
         res.json(beats);
     } catch (error) {
@@ -471,7 +510,13 @@ app.delete('/api/photos/:id', authenticateToken, async (req, res) => {
 });
 
 app.listen(PORT, async () => {
-    await initializeDefaultData();
+    if (mongoConnected) {
+        await initializeDefaultData();
+    }
     console.log(`Server running on http://localhost:${PORT}`);
-    console.log('Connected to MongoDB');
+    if (mongoConnected) {
+        console.log('✓ Connected to MongoDB');
+    } else {
+        console.log('⚠ Running without MongoDB - database features disabled');
+    }
 });
