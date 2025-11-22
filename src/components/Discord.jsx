@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { getApiUrl } from '../utils/api';
 
 function Discord() {
   const [discordContent, setDiscordContent] = useState({
@@ -14,7 +15,8 @@ function Discord() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    fetch('http://localhost:3000/api/content')
+    const apiUrl = getApiUrl();
+    fetch(`${apiUrl}/content`)
       .then(res => res.json())
       .then(data => {
         setDiscordContent(data.discord);
@@ -31,7 +33,8 @@ function Discord() {
   const handleSave = async () => {
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/content/discord', {
+      const apiUrl = getApiUrl();
+      const response = await fetch(`${apiUrl}/content/discord`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

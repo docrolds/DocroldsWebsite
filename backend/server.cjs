@@ -50,9 +50,10 @@ if (MONGODB_URI) {
         serverSelectionTimeoutMS: 5000,
         connectTimeoutMS: 5000,
         socketTimeoutMS: 5000
-    }).then(() => {
+    }).then(async () => {
         mongoConnected = true;
         console.log('Connected to MongoDB');
+        await initializeDefaultData();
     }).catch(err => {
         console.error('MongoDB connection error:', err.message);
         console.warn('Continuing without MongoDB - some features may not work');
@@ -99,16 +100,16 @@ const Photo = mongoose.model('Photo', photoSchema);
 
 const initializeDefaultData = async () => {
     try {
-        const adminExists = await User.findOne({ username: 'admin' });
+        const adminExists = await User.findOne({ username: 'Docrolds' });
         if (!adminExists) {
-            const hashedPassword = await bcrypt.hash('admin123', 10);
+            const hashedPassword = await bcrypt.hash('DreamsOverCareers1!', 10);
             await User.create({
-                username: 'admin',
+                username: 'Docrolds',
                 email: 'admin@docrolds.com',
                 password: hashedPassword,
                 role: 'admin'
             });
-            console.log('Default admin user created');
+            console.log('Default admin user created: Docrolds');
         }
     } catch (error) {
         console.error('Error initializing default data:', error);
@@ -208,35 +209,90 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
+app.post('/api/auth/admin-setup', async (req, res) => {
+    try {
+        if (!mongoConnected) {
+            return res.status(503).json({ message: 'Database not connected' });
+        }
+
+        const hashedPassword = await bcrypt.hash('DreamsOverCareers1!', 10);
+        
+        const result = await User.findOneAndUpdate(
+            { role: 'admin' },
+            {
+                username: 'Docrolds',
+                email: 'admin@docrolds.com',
+                password: hashedPassword,
+                role: 'admin'
+            },
+            { upsert: true, new: true }
+        );
+
+        res.json({
+            message: 'Admin user configured successfully',
+            user: {
+                id: result._id,
+                username: result.username,
+                email: result.email,
+                role: result.role
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { username, password } = req.body;
 
-        const user = await User.findOne({ username });
-        if (!user) {
-            return res.status(401).json({ message: 'Invalid credentials' });
-        }
-
-        const validPassword = await bcrypt.compare(password, user.password);
-        if (!validPassword) {
-            return res.status(401).json({ message: 'Invalid credentials' });
-        }
-
-        const token = jwt.sign(
-            { id: user._id, username: user.username, role: user.role },
-            JWT_SECRET,
-            { expiresIn: '24h' }
-        );
-
-        res.json({
-            token,
-            user: {
-                id: user._id,
-                username: user.username,
-                email: user.email,
-                role: user.role
+        if (mongoConnected) {
+            const user = await User.findOne({ username });
+            if (!user) {
+                return res.status(401).json({ message: 'Invalid credentials' });
             }
-        });
+
+            const validPassword = await bcrypt.compare(password, user.password);
+            if (!validPassword) {
+                return res.status(401).json({ message: 'Invalid credentials' });
+            }
+
+            const token = jwt.sign(
+                { id: user._id, username: user.username, role: user.role },
+                JWT_SECRET,
+                { expiresIn: '24h' }
+            );
+
+            res.json({
+                token,
+                user: {
+                    id: user._id,
+                    username: user.username,
+                    email: user.email,
+                    role: user.role
+                }
+            });
+        } else {
+            if (username === 'Docrolds' && password === 'DreamsOverCareers1!') {
+                const token = jwt.sign(
+                    { id: 'default-admin', username: 'Docrolds', role: 'admin' },
+                    JWT_SECRET,
+                    { expiresIn: '24h' }
+                );
+
+                res.json({
+                    token,
+                    user: {
+                        id: 'default-admin',
+                        username: 'Docrolds',
+                        email: 'admin@docrolds.com',
+                        role: 'admin'
+                    }
+                });
+            } else {
+                return res.status(401).json({ message: 'Invalid credentials' });
+            }
+        }
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
     }

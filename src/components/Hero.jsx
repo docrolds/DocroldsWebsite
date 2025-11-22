@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { getApiUrl } from '../utils/api';
 
 function Hero() {
   const [heroContent, setHeroContent] = useState({
@@ -15,7 +16,8 @@ function Hero() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    fetch('http://localhost:3000/api/content')
+    const apiUrl = getApiUrl();
+    fetch(`${apiUrl}/content`)
       .then(res => res.json())
       .then(data => {
         setHeroContent(data.hero);
@@ -36,7 +38,8 @@ function Hero() {
   const handleSave = async () => {
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:3000/api/content/hero', {
+      const apiUrl = getApiUrl();
+      const response = await fetch(`${apiUrl}/content/hero`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

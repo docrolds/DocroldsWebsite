@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { getApiUrl } from '../utils/api';
 
 function Footer() {
   const [footerContent, setFooterContent] = useState({
@@ -11,7 +12,8 @@ function Footer() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    fetch('http://localhost:3000/api/content')
+    const apiUrl = getApiUrl();
+    fetch(`${apiUrl}/content`)
       .then(res => res.json())
       .then(data => {
         setFooterContent(data.footer);
