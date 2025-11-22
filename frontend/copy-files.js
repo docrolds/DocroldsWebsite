@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 
-const files = ['admin.html', 'beats.html', 'login.html', 'admin.js', 'beats.js', 'config.js', 'index.html'];
+const files = ['admin.html', 'beats.html', 'login.html', 'admin.js', 'beats.js', 'config.js'];
 const sourceDir = '.';
 const destDir = './dist';
 
