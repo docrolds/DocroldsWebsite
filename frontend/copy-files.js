@@ -6,7 +6,7 @@ const files = ['admin.html', 'beats.html', 'login.html', 'admin.js', 'beats.js',
 const sourceDir = '.';
 const destDir = './dist';
 
-const apiUrl = process.env.VITE_API_URL || 'http://localhost:3000/api';
+const apiUrl = process.env.VITE_API_URL || 'https://docrolds-api.onrender.com/api';
 
 if (!fs.existsSync(destDir)) {
     fs.mkdirSync(destDir, { recursive: true });
