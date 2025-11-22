@@ -5,12 +5,13 @@
   "type": "commonjs",
   "main": "server.cjs",
   "scripts": {
-    "start": "node server.cjs",
+    "start": "npx prisma migrate deploy && node server.cjs",
+    "start:migrate": "npx prisma migrate deploy && node server.cjs",
     "dev": "node server.cjs",
     "postinstall": "prisma generate"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^5.0.0",
+    "@prisma/adapter-pg": "^7.0.0",
     "@prisma/client": "^7.0.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
