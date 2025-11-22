@@ -7,11 +7,33 @@ const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
 
-const app = express();
-const PORT = 3000;
-const JWT_SECRET = 'your-secret-key-change-in-production';
+// Best practice: use environment variables for configuration
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'DreamsOverCareers1!';
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const EMAIL_USER = process.env.EMAIL_USER; // Add this
+const EMAIL_PASS = process.env.EMAIL_PASS; // Add this
 
-app.use(cors());
+const app = express();
+
+// --- CORS Configuration ---
+// This is critical for security. Only allow requests from your frontend.
+const allowedOrigins = [
+    'http://localhost:3000', // Your local dev URL (for Next.js, etc.)
+    'http://localhost:5173', // Your local dev URL (for Vite, etc.)
+    'https://docrolds-frontend-mvoil8x7v-doc-rolds-projects.vercel.app' // Your Vercel URL
+];
+
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    }
+}));
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
@@ -33,8 +55,8 @@ const upload = multer({ storage });
 let users = [
     {
         id: 1,
-        username: 'admin',
-        password: bcrypt.hashSync('admin123', 10),
+        username: ADMIN_USERNAME,
+        password: bcrypt.hashSync(ADMIN_PASSWORD, 10),
         email: 'admin@docrolds.com',
         role: 'admin',
         createdAt: new Date().toISOString()
@@ -93,12 +115,13 @@ let beats = [
 ];
 
 const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
+    // Example for SendGrid, but can be adapted for Gmail, etc.
+    host: process.env.EMAIL_HOST,
+    port: process.env.EMAIL_PORT,
+    secure: process.env.EMAIL_PORT == 465, // true for 465, false for other ports
     auth: {
-        user: 'your-email@gmail.com',
-        pass: 'your-app-password'
+        user: EMAIL_USER,
+        pass: EMAIL_PASS
     }
 });
 
@@ -270,13 +293,17 @@ app.delete('/api/beats/:id', authenticateToken, (req, res) => {
 app.post('/api/send-email', async (req, res) => {
     const { to, subject, text, html } = req.body;
 
+    if (!EMAIL_USER || !EMAIL_PASS) {
+        console.error('Email credentials are not configured in environment variables.');
+        return res.status(500).json({ message: 'Email service is not configured.' });
+    }
+
     try {
         await transporter.sendMail({
-            from: '"Doc Rolds" <your-email@gmail.com>',
+            from: `"Doc Rolds" <${EMAIL_USER}>`,
             to,
             subject,
-            text,
-            html
+            html: html || text
         });
         res.json({ message: 'Email sent successfully' });
     } catch (error) {
@@ -284,9 +311,8 @@ app.post('/api/send-email', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-    console.log('Default admin credentials:');
-    console.log('Username: admin');
-    console.log('Password: admin123');
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log('Admin user configured from environment variables.');
+    console.log(`Username: ${ADMIN_USERNAME}`);
 });
