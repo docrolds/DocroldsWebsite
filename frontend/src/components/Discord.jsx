@@ -14,7 +14,7 @@ function Discord() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    fetch('https://doc-rolds-api.onrender.com/api/content')
+    fetch('https://docrolds-api.onrender.com/api/content')
       .then(res => res.json())
       .then(data => {
         setDiscordContent(data.discord);
@@ -31,7 +31,7 @@ function Discord() {
   const handleSave = async () => {
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('https://doc-rolds-api.onrender.com/api/content/discord', {
+      const response = await fetch('https://docrolds-api.onrender.com/api/content/discord', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
