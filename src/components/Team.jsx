@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getApiUrl, getBaseUrl } from '../utils/api';
 
 function Team() {
   const [teamMembers, setTeamMembers] = useState([]);
@@ -9,11 +10,20 @@ function Team() {
   useEffect(() => {
     const fetchPhotos = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/photos');
+        const apiUrl = getApiUrl();
+        const baseUrl = getBaseUrl();
+        
+        const response = await fetch(`${apiUrl}/photos`);
         const photos = await response.json();
         const teamPhotos = photos.filter(photo => photo.category === 'team' && photo.displayOnHome === true);
-        if (teamPhotos.length > 0) {
-          setTeamMembers(teamPhotos);
+        
+        const processedPhotos = teamPhotos.map(photo => ({
+          ...photo,
+          photoFile: photo.photoFile.startsWith('http') ? photo.photoFile : `${baseUrl}/${photo.photoFile}`
+        }));
+        
+        if (processedPhotos.length > 0) {
+          setTeamMembers(processedPhotos);
           setCurrentIndex(0);
         }
       } catch (error) {
