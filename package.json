@@ -6,7 +6,7 @@
   "scripts": {
     "dev:backend": "cd backend && npm start",
     "dev:frontend": "cd frontend && npm run dev",
-    "build": "cd frontend && npm install && npm run build"
+    "build": "npm install --prefix frontend && npm run build --prefix frontend"
   },
   "dependencies": {
     "react": "^18.3.1",
