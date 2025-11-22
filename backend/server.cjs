@@ -13,6 +13,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const MONGODB_URI = process.env.MONGODB_URI;
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
 // Define allowed origins for CORS
 const allowedOrigins = [
@@ -21,15 +23,23 @@ const allowedOrigins = [
     'http://127.0.0.1:5173',
     'http://127.0.0.1:3000',
     'https://docrolds-frontend.vercel.app',
-    'https://www.docrolds.com'
+    'https://docrolds.vercel.app',
+    'https://www.docrolds.com',
+    'https://docrolds.com'
 ];
 
 app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
+    origin: function (origin, callback) {
+        if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+            callback(null, true);
+        } else if (origin.includes('vercel.app')) {
+            callback(null, true);
+        } else if (origin.includes('docrolds')) {
+            callback(null, true);
+        } else if (allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
-            callback(new Error('Not allowed by CORS'));
+            callback(null, true);
         }
     },
     credentials: true
@@ -100,16 +110,16 @@ const Photo = mongoose.model('Photo', photoSchema);
 
 const initializeDefaultData = async () => {
     try {
-        const adminExists = await User.findOne({ username: 'Docrolds' });
+        const adminExists = await User.findOne({ username: ADMIN_USERNAME });
         if (!adminExists) {
-            const hashedPassword = await bcrypt.hash('DreamsOverCareers1!', 10);
+            const hashedPassword = await bcrypt.hash(ADMIN_PASSWORD, 10);
             await User.create({
-                username: 'Docrolds',
+                username: ADMIN_USERNAME,
                 email: 'admin@docrolds.com',
                 password: hashedPassword,
                 role: 'admin'
             });
-            console.log('Default admin user created: Docrolds');
+            console.log(`Default admin user created: ${ADMIN_USERNAME}`);
         }
     } catch (error) {
         console.error('Error initializing default data:', error);
@@ -273,9 +283,9 @@ app.post('/api/auth/login', async (req, res) => {
                 }
             });
         } else {
-            if (username === 'Docrolds' && password === 'DreamsOverCareers1!') {
+            if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
                 const token = jwt.sign(
-                    { id: 'default-admin', username: 'Docrolds', role: 'admin' },
+                    { id: 'default-admin', username: ADMIN_USERNAME, role: 'admin' },
                     JWT_SECRET,
                     { expiresIn: '24h' }
                 );
@@ -284,7 +294,7 @@ app.post('/api/auth/login', async (req, res) => {
                     token,
                     user: {
                         id: 'default-admin',
-                        username: 'Docrolds',
+                        username: ADMIN_USERNAME,
                         email: 'admin@docrolds.com',
                         role: 'admin'
                     }
