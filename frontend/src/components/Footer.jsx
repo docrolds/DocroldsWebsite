@@ -11,7 +11,7 @@ function Footer() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    fetch('https://doc-rolds-api.onrender.com/api/content')
+    fetch('https://docrolds-api.onrender.com/api/content')
       .then(res => res.json())
       .then(data => {
         setFooterContent(data.footer);
