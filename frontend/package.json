@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
-    "build": "vite build && node copy-files.js",
+    "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
