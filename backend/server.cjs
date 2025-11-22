@@ -223,6 +223,7 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         console.log(`[LOGIN] Attempting login for username: ${username}`);
+        console.log(`[LOGIN] Password provided: ${password ? 'yes' : 'no'}`);
 
         const user = await prisma.user.findUnique({
             where: { username }
@@ -233,7 +234,12 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
 
+        console.log(`[LOGIN] User found: ${user.username}, role: ${user.role}`);
+        console.log(`[LOGIN] Comparing password...`);
+
         const validPassword = await bcrypt.compare(password, user.password);
+        console.log(`[LOGIN] Password valid: ${validPassword}`);
+        
         if (!validPassword) {
             console.log(`[LOGIN] Invalid password for user: ${username}`);
             return res.status(401).json({ message: 'Invalid credentials' });
@@ -570,12 +576,49 @@ app.delete('/api/photos/:id', authenticateToken, async (req, res) => {
     }
 });
 
+const runMigrations = async () => {
+    try {
+        const { execSync } = require('child_process');
+        console.log('[MIGRATE] Running database migrations...');
+        console.log('[MIGRATE] DATABASE_URL exists:', !!process.env.DATABASE_URL);
+        
+        // Run migration with explicit error handling
+        try {
+            const output = execSync('npx prisma migrate deploy', { 
+                stdio: 'pipe',
+                encoding: 'utf8',
+                cwd: __dirname
+            });
+            console.log('[MIGRATE] Output:', output);
+            console.log('[MIGRATE] ✓ Migrations completed successfully');
+        } catch (migrateError) {
+            console.error('[MIGRATE] Migration command failed:');
+            console.error('[MIGRATE] Error message:', migrateError.message);
+            if (migrateError.stdout) console.error('[MIGRATE] stdout:', migrateError.stdout.toString());
+            if (migrateError.stderr) console.error('[MIGRATE] stderr:', migrateError.stderr.toString());
+            throw migrateError;
+        }
+    } catch (error) {
+        console.error('[MIGRATE] Migration error:', error.message);
+        console.error('[MIGRATE] Full error:', error);
+        // Don't continue - we need migrations to succeed
+        throw error;
+    }
+};
+
 app.listen(PORT, async () => {
     try {
+        console.log('[STARTUP] Starting server initialization...');
+        // Run migrations before initializing data
+        console.log('[STARTUP] Step 1: Running migrations...');
+        await runMigrations();
+        console.log('[STARTUP] Step 2: Initializing default data...');
         await initializeDefaultData();
-        console.log(`Server running on http://localhost:${PORT}`);
+        console.log(`[STARTUP] ✓ Server running on http://localhost:${PORT}`);
         console.log('✓ Connected to PostgreSQL');
     } catch (error) {
-        console.error('Server startup error:', error);
+        console.error('[STARTUP] Server startup error:', error);
+        console.error('[STARTUP] Error stack:', error.stack);
+        // Don't exit - let the server start anyway for debugging
     }
 });
