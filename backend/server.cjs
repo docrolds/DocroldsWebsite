@@ -61,24 +61,18 @@ if (!fs.existsSync('uploads')) {
 const initializeDefaultData = async () => {
     try {
         console.log(`[INIT] Checking for admin user: ${ADMIN_USERNAME}`);
-        const adminExists = await prisma.user.findUnique({
-            where: { username: ADMIN_USERNAME }
+        const hashedPassword = await bcrypt.hash(ADMIN_PASSWORD, 10);
+        await prisma.user.upsert({
+            where: { username: ADMIN_USERNAME },
+            update: { password: hashedPassword },
+            create: {
+                username: ADMIN_USERNAME,
+                email: 'admin@docrolds.com',
+                password: hashedPassword,
+                role: 'admin'
+            }
         });
-        if (!adminExists) {
-            console.log(`[INIT] Admin user not found, creating...`);
-            const hashedPassword = await bcrypt.hash(ADMIN_PASSWORD, 10);
-            await prisma.user.create({
-                data: {
-                    username: ADMIN_USERNAME,
-                    email: 'admin@docrolds.com',
-                    password: hashedPassword,
-                    role: 'admin'
-                }
-            });
-            console.log(`[INIT] ✓ Default admin user created: ${ADMIN_USERNAME}`);
-        } else {
-            console.log(`[INIT] ✓ Admin user already exists: ${ADMIN_USERNAME}`);
-        }
+        console.log(`[INIT] ✓ Default admin user configured: ${ADMIN_USERNAME}`);
     } catch (error) {
         console.error('[INIT] Error initializing default data:', error);
         console.error('[INIT] Error details:', error.message);
