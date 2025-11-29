@@ -1,4 +1,7 @@
-const API_URL = window.VITE_API_URL || 'http://localhost:3000/api';
+// API Configuration
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+console.log('Admin Dashboard - API URL:', API_URL);
 let currentEditUserId = null;
 let currentEditBeatId = null;
 

@@ -14,4 +14,6 @@ services:
         value: admin
       - key: ADMIN_PASSWORD
         value: admin123
+      - key: DATABASE_URL
+        value: "postgresql://docrolds_user:ZfratVit7BdDHLsfVA28ojzSzvMZeTo6@dpg-d4gkhl7diees73avhc5g-a.oregon-postgres.render.com/docrolds"
     autoDeploy: true

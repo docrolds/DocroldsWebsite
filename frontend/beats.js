@@ -1,5 +1,9 @@
+// API Configuration
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+console.log('Beats Page - API URL:', API_URL);
+
 let beats = [];
-const API_URL = window.VITE_API_URL || 'http://localhost:3000/api';
 let audioElement = new Audio();
 let audioContext = null;
 let analyser = null;

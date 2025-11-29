@@ -1,3 +1,6 @@
+// API Configuration
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
@@ -5,8 +8,10 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     const password = document.getElementById('password').value;
     const errorMessage = document.getElementById('errorMessage');
 
+    console.log('Attempting login to:', `${API_URL}/auth/login`);
+
     try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/login`, {
+        const response = await fetch(`${API_URL}/auth/login`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
