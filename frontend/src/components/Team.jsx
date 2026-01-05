@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { API_URL } from '../config.js';
 
 function Team() {
   const [teamMembers, setTeamMembers] = useState([]);
@@ -9,8 +10,9 @@ function Team() {
   useEffect(() => {
     const fetchPhotos = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/photos');
+        const response = await fetch(`${API_URL}/photos`);
         const photos = await response.json();
+        if (!Array.isArray(photos)) return;
         const teamPhotos = photos.filter(photo => photo.category === 'team' && photo.displayOnHome === true);
         if (teamPhotos.length > 0) {
           setTeamMembers(teamPhotos);
@@ -83,7 +85,7 @@ function Team() {
           {visibleMembers.map((member) => (
             <div key={member.id} className="team-member" style={{background: 'rgba(26, 26, 26, 0.8)', border: '1px solid rgba(232, 54, 40, 0.2)', width: '100%', maxWidth: '280px'}}>
               <div className="team-member-avatar">
-                <img src={member.photoFile} alt={member.name} style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%'}} />
+                <img src={member.photoData || member.photoFile} alt={member.name} style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%'}} />
               </div>
               <div className="team-member-name">{member.name}</div>
               <div className="team-member-role" style={{fontSize: '0.9rem'}}>

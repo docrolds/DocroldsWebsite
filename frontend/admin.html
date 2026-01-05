@@ -926,8 +926,14 @@
                     <input type="number" step="0.01" class="form-input" id="beatPrice" required>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Audio File</label>
-                    <input type="file" class="form-file" id="beatAudioFile" accept="audio/*">
+                    <label class="form-label">MP3 Preview File</label>
+                    <input type="file" class="form-file" id="beatAudioFile" accept="audio/mpeg,audio/mp3">
+                    <small style="color: #888; font-size: 0.75rem;">MP3 file for streaming preview</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">WAV File (Full Quality)</label>
+                    <input type="file" class="form-file" id="beatWavFile" accept="audio/wav,audio/x-wav">
+                    <small style="color: #888; font-size: 0.75rem;">High-quality WAV for unlimited license downloads</small>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Cover Art</label>
@@ -971,24 +977,20 @@
                     <label class="form-label">Roles (Select all that apply)</label>
                     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="roleArtist" value="artist">
-                            <span>Artist</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" id="roleProducer" value="producer">
                             <span>Producer</span>
                         </label>
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="roleArtist" value="artist">
+                            <span>Artist</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="roleManager" value="manager">
+                            <span>Manager</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" id="roleEngineer" value="engineer">
                             <span>Engineer</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="roleConsultant" value="consultant">
-                            <span>Consultant</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="roleLawyer" value="lawyer">
-                            <span>Lawyer</span>
                         </label>
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" id="roleOther" value="other" onchange="toggleCustomRole()">
@@ -1003,6 +1005,14 @@
                     <div class="credits-input-container">
                         <input type="text" class="form-input" id="creditInput" placeholder="Type credit and press Enter">
                         <div id="creditsList" style="display: flex; flex-wrap: wrap; gap: 0.5rem;"></div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Placements</label>
+                    <div class="placements-input-container">
+                        <input type="text" class="form-input" id="placementInput" placeholder="Type placement and press Enter (e.g., 'Drake - Album')">
+                        <div id="placementsList" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;"></div>
                     </div>
                 </div>
 

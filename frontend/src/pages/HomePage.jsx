@@ -1,129 +1,35 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { API_URL } from '../config.js';
+import Sessions from '../components/Sessions';
+import Videos from '../components/Videos';
+import Instagram from '../components/Instagram';
+import Team from '../components/Team';
+import Beats from '../components/Beats';
+import Discord from '../components/Discord';
+import FAQ from '../components/FAQ';
 
-function Hero() {
+function HomePage() {
   const [heroContent, setHeroContent] = useState({
     title: 'The Journey to Professional Sound Starts with a Dream',
     tagline: 'Dreams Over Careers',
     description: 'Professional recording studio and mixing services for artists who are serious about their craft. Book your session today and bring your music to life.',
     imageUrl: ''
   });
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  const [editForm, setEditForm] = useState({ ...heroContent });
-  const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('adminToken');
-    setIsAdmin(!!token);
-
     fetch(`${API_URL}/content`)
       .then(res => res.json())
       .then(data => {
         if (data?.hero) {
           setHeroContent(data.hero);
-          setEditForm(data.hero);
         }
       })
       .catch(err => console.error('Failed to fetch hero content:', err));
-
-    const handleScroll = () => setScrolled(window.scrollY > 50);
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-
-  const handleBookNow = () => {
-    alert('Booking functionality to be implemented');
-  };
-
-  const navLinks = [
-    { name: 'Home', href: '#home' },
-    { name: 'Services', href: '#services' },
-    { name: 'Beats', href: '#beats' },
-    { name: 'Team', href: '#team' },
-    { name: 'Contact', href: '#contact' }
-  ];
 
   return (
     <>
-      {/* Navigation */}
-      <nav style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        padding: scrolled ? '0.75rem 3rem' : '1.25rem 3rem',
-        background: scrolled ? 'rgba(0, 0, 0, 0.98)' : 'rgba(0, 0, 0, 0)',
-        backdropFilter: scrolled ? 'blur(20px)' : 'none',
-        borderBottom: scrolled ? '1px solid rgba(232, 54, 40, 0.15)' : '1px solid transparent',
-        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
-        {/* Logo */}
-        <a href="#home">
-          <img
-            src="/logo.jpg"
-            alt="Doc Rolds"
-            style={{
-              height: '45px',
-              width: 'auto',
-              objectFit: 'contain',
-              borderRadius: '4px'
-            }}
-          />
-        </a>
-
-        {/* Nav Links */}
-        <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
-          {navLinks.map(link => (
-            <a
-              key={link.name}
-              href={link.href}
-              style={{
-                color: '#ffffff',
-                textDecoration: 'none',
-                fontSize: '0.85rem',
-                fontWeight: '500',
-                letterSpacing: '0.5px',
-                textTransform: 'uppercase',
-                transition: 'color 0.2s ease'
-              }}
-              onMouseEnter={e => e.target.style.color = '#E83628'}
-              onMouseLeave={e => e.target.style.color = '#ffffff'}
-            >
-              {link.name}
-            </a>
-          ))}
-          <button
-            onClick={handleBookNow}
-            style={{
-              background: '#E83628',
-              color: 'white',
-              border: 'none',
-              padding: '0.6rem 1.5rem',
-              borderRadius: '4px',
-              fontSize: '0.85rem',
-              fontWeight: '600',
-              cursor: 'pointer',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              transition: 'all 0.2s ease'
-            }}
-            onMouseEnter={e => {
-              e.target.style.background = '#c42d22';
-            }}
-            onMouseLeave={e => {
-              e.target.style.background = '#E83628';
-            }}
-          >
-            Book Now
-          </button>
-        </div>
-      </nav>
-
       {/* Hero Section */}
       <section id="home" style={{
         position: 'relative',
@@ -142,7 +48,7 @@ function Hero() {
           bottom: 0,
           backgroundImage: 'url("/studio-hero.jpg")',
           backgroundSize: 'cover',
-          backgroundPosition: 'center',
+          backgroundPosition: 'center 20%',
           filter: 'brightness(0.55)'
         }} />
 
@@ -229,8 +135,8 @@ function Hero() {
 
           {/* Buttons */}
           <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '3rem' }}>
-            <button
-              onClick={handleBookNow}
+            <Link
+              to="/services"
               style={{
                 background: '#E83628',
                 color: 'white',
@@ -243,13 +149,14 @@ function Hero() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.5rem',
-                transition: 'all 0.2s ease'
+                transition: 'all 0.2s ease',
+                textDecoration: 'none'
               }}
               onMouseEnter={e => e.target.style.background = '#c42d22'}
               onMouseLeave={e => e.target.style.background = '#E83628'}
             >
-              Book a Session →
-            </button>
+              Book a Session
+            </Link>
 
             <a
               href="https://open.spotify.com/playlist/6lQ3qQ34fxkf8roPLdbMYH?si=089e5d2c0b404e58"
@@ -279,7 +186,7 @@ function Hero() {
                 e.target.style.borderColor = 'rgba(255,255,255,0.3)';
               }}
             >
-              ▶ View My Work
+              View My Work
             </a>
           </div>
 
@@ -317,8 +224,17 @@ function Hero() {
           </div>
         </div>
       </section>
+
+      {/* All other sections */}
+      <Sessions />
+      <Videos />
+      <Instagram />
+      <Team />
+      <Beats />
+      <Discord />
+      <FAQ />
     </>
   );
 }
 
-export default Hero;
+export default HomePage;

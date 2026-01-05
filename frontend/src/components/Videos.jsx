@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_URL } from '../config.js';
 
 function Videos() {
   const [videosContent, setVideosContent] = useState({
@@ -15,10 +16,12 @@ function Videos() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    fetch('https://docrolds-api.onrender.com/api/content')
+    fetch(`${API_URL}/content`)
       .then(res => res.json())
       .then(data => {
-        setVideosContent(data.videos);
+        if (data?.videos) {
+          setVideosContent(data.videos);
+        }
       })
       .catch(err => console.error('Failed to fetch videos content:', err));
   }, []);

@@ -8,20 +8,23 @@
     "start": "npx prisma migrate deploy && node server.cjs",
     "start:migrate": "npx prisma migrate deploy && node server.cjs",
     "dev": "node server.cjs",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "seed": "node prisma/seed.js"
+  },
+  "prisma": {
+    "schema": "./prisma/schema.prisma"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.0.0",
-    "@prisma/client": "^7.0.0",
+    "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
-    "nodemailer": "^6.9.14",
+    "nodemailer": "^7.0.12",
     "pg": "^8.16.3",
-    "prisma": "^7.0.0",
+    "prisma": "^5.22.0",
     "sharp": "^0.32.6"
   }
 }

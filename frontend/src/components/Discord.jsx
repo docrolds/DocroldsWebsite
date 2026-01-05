@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_URL } from '../config.js';
 
 function Discord() {
   const [discordContent, setDiscordContent] = useState({
@@ -14,11 +15,13 @@ function Discord() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    fetch('https://docrolds-api.onrender.com/api/content')
+    fetch(`${API_URL}/content`)
       .then(res => res.json())
       .then(data => {
-        setDiscordContent(data.discord);
-        setEditForm(data.discord);
+        if (data?.discord) {
+          setDiscordContent(data.discord);
+          setEditForm(data.discord);
+        }
       })
       .catch(err => console.error('Failed to fetch discord content:', err));
   }, []);
@@ -31,7 +34,7 @@ function Discord() {
   const handleSave = async () => {
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('https://docrolds-api.onrender.com/api/content/discord', {
+      const response = await fetch(`${API_URL}/content/discord`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
