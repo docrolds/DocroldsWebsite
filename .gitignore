@@ -19,3 +19,5 @@ yarn-error.log*
 # Other
 .DS_Store
 /uploads
+.vercel
+.env*.local

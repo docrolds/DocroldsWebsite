@@ -483,15 +483,6 @@ const mockBeats = [
     { title: 'Electric Dreams', genre: 'Pop', category: 'Pop', bpm: 120, key: 'G Major', duration: 210 }
 ];
 
-app.get('/api/photos', async (req, res) => {
-    try {
-        const photos = await prisma.photo.findMany();
-        res.json(photos);
-    } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
-});
-
 // Photo endpoints with database storage
 app.get('/api/photos', async (req, res) => {
     try {
@@ -716,100 +707,6 @@ app.delete('/api/beats/:id', authenticateToken, async (req, res) => {
             return res.status(404).json({ message: 'Beat not found' });
         }
         res.json({ message: 'Beat deleted successfully' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
-});
-
-app.get('/api/photos', async (req, res) => {
-    try {
-        const photos = await prisma.photo.findMany();
-        res.json(photos);
-    } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
-});
-
-app.post('/api/photos', authenticateToken, upload.single('photoFile'), async (req, res) => {
-    try {
-        const { name, role, credits, category, description, displayOnHome } = req.body;
-
-        if (!category) {
-            return res.status(400).json({ message: 'Category is required' });
-        }
-
-        let photoPath = null;
-        if (req.file) {
-            const uploadPath = `uploads/photos/${category}/${req.file.filename}`;
-            const processedPath = await processTeamPhoto(uploadPath);
-            photoPath = processedPath.replace(/\\/g, '/');
-        }
-
-        const newPhoto = await prisma.photo.create({
-            data: {
-                name: name || 'Untitled Photo',
-                role: role || '',
-                credits: credits || '',
-                category,
-                description: description || '',
-                photoFile: photoPath,
-                displayOnHome: displayOnHome === 'true' || displayOnHome === true
-            }
-        });
-
-        res.status(201).json(newPhoto);
-    } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
-});
-
-app.put('/api/photos/:id', authenticateToken, upload.single('photoFile'), async (req, res) => {
-    try {
-        const { name, role, credits, placements, category, description, displayOnHome } = req.body;
-        const photo = await prisma.photo.findUnique({
-            where: { id: req.params.id }
-        });
-
-        if (!photo) {
-            return res.status(404).json({ message: 'Photo not found' });
-        }
-
-        const updateData = {
-            ...(name && { name }),
-            ...(role && { role }),
-            ...(credits && { credits }),
-            ...(placements !== undefined && { placements }),
-            ...(category && { category }),
-            ...(description && { description }),
-            ...(displayOnHome !== undefined && { displayOnHome: displayOnHome === 'true' || displayOnHome === true })
-        };
-
-        if (req.file) {
-            const catToUse = category || photo.category;
-            const uploadPath = `uploads/photos/${catToUse}/${req.file.filename}`;
-            const processedPath = await processTeamPhoto(uploadPath);
-            updateData.photoFile = processedPath.replace(/\\/g, '/');
-        }
-
-        const updatedPhoto = await prisma.photo.update({
-            where: { id: req.params.id },
-            data: updateData
-        });
-        res.json(updatedPhoto);
-    } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
-});
-
-app.delete('/api/photos/:id', authenticateToken, async (req, res) => {
-    try {
-        const photo = await prisma.photo.delete({
-            where: { id: req.params.id }
-        });
-        if (!photo) {
-            return res.status(404).json({ message: 'Photo not found' });
-        }
-        res.json({ message: 'Photo deleted successfully' });
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
     }
