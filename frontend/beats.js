@@ -91,17 +91,29 @@ function renderPlaylist() {
     const playlist = document.getElementById('playlist');
     if (!playlist) return;
 
-    playlist.innerHTML = beats.map((beat, index) => `
-        <li class="playlist-item ${index === 0 ? 'active' : ''}" onclick="playBeat(${index})" data-index="${index}">
-            <div class="playlist-item-icon">
-                ${index === 0 ? '<span class="playlist-item-active">♫</span>' : '♪'}
-            </div>
-            <div class="playlist-item-content">
-                <div class="playlist-item-title ${index === 0 ? 'playlist-item-active-title' : ''}">${beat.title} ${beat.audioFile ? '🎵' : ''}</div>
-                <div class="playlist-item-genre">${beat.genre}</div>
-            </div>
-        </li>
-    `).join('');
+    playlist.innerHTML = beats.map((beat, index) => {
+        // Format price display
+        const priceDisplay = beat.price ? `$${parseFloat(beat.price).toFixed(2)}` : 'Free';
+
+        // Get cover art URL
+        const coverArtUrl = beat.coverArt ? `${API_URL.replace('/api', '')}${beat.coverArt}` : null;
+
+        return `
+            <li class="playlist-item ${index === 0 ? 'active' : ''}" onclick="playBeat(${index})" data-index="${index}">
+                <div class="playlist-item-cover">
+                    ${coverArtUrl ? `<img src="${coverArtUrl}" alt="${beat.title}" class="cover-art-img">` : '<div class="cover-art-placeholder"><i class="fas fa-music"></i></div>'}
+                </div>
+                <div class="playlist-item-content">
+                    <div class="playlist-item-title ${index === 0 ? 'playlist-item-active-title' : ''}">${beat.title}</div>
+                    <div class="playlist-item-meta">
+                        <span class="playlist-item-genre">${beat.genre || 'Beat'}</span>
+                        <span class="playlist-item-bpm">${beat.bpm || '--'} BPM</span>
+                    </div>
+                </div>
+                <div class="playlist-item-price ${beat.price ? '' : 'free'}">${priceDisplay}</div>
+            </li>
+        `;
+    }).join('');
 }
 
 function playBeat(index) {

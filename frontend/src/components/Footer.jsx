@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_URL } from '../config.js';
 
 function Footer() {
   const [footerContent, setFooterContent] = useState({
@@ -11,10 +12,12 @@ function Footer() {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
     
-    fetch('https://docrolds-api.onrender.com/api/content')
+    fetch(`${API_URL}/content`)
       .then(res => res.json())
       .then(data => {
-        setFooterContent(data.footer);
+        if (data?.footer) {
+          setFooterContent(data.footer);
+        }
       })
       .catch(err => console.error('Failed to fetch footer content:', err));
   }, []);

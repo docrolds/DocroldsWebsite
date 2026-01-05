@@ -291,6 +291,16 @@ document.getElementById('beatForm').addEventListener('submit', async (e) => {
         formData.append('audioFile', audioFile);
     }
 
+    const wavFile = document.getElementById('beatWavFile').files[0];
+    if (wavFile) {
+        formData.append('wavFile', wavFile);
+    }
+
+    const coverArt = document.getElementById('beatCoverArt').files[0];
+    if (coverArt) {
+        formData.append('coverArt', coverArt);
+    }
+
     try {
         if (beatId) {
             await fetchWithAuth(`${API_URL}/beats/${beatId}`, {
@@ -315,6 +325,7 @@ document.getElementById('beatForm').addEventListener('submit', async (e) => {
 let teamMembers = [];
 let currentEditTeamMemberId = null;
 let currentTeamCredits = [];
+let currentTeamPlacements = [];
 
 async function loadTeamMembers() {
     try {
@@ -359,7 +370,7 @@ async function loadTeamMembers() {
             
             card.innerHTML = `
                 <div class="team-member-photo" style="position: relative;">
-                    <img src="${member.photoFile}" alt="${member.name}" onerror="this.parentElement.style.background='linear-gradient(135deg, #E83628, #c41e1e)'">
+                    <img src="${member.photoData || `${API_URL.replace('/api', '')}/${member.photoFile}`}" alt="${member.name}" onerror="this.parentElement.style.background='linear-gradient(135deg, #E83628, #c41e1e)'">
                     <div onclick="toggleTeamMemberVisibility(${member.id})" style="position: absolute; top: 8px; right: 8px; background: ${member.displayOnHome ? '#E83628' : 'rgba(0,0,0,0.5)'}; color: ${member.displayOnHome ? 'white' : '#999'}; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer;" title="${member.displayOnHome ? 'Visible on Home Page' : 'Hidden from Home Page'}"><i class="fas fa-${member.displayOnHome ? 'eye' : 'eye-slash'}"></i></div>
                 </div>
                 <div class="team-member-info">
@@ -382,6 +393,7 @@ async function loadTeamMembers() {
 function openAddTeamMemberModal() {
     currentEditTeamMemberId = null;
     currentTeamCredits = [];
+    currentTeamPlacements = [];
     document.getElementById('teamMemberModalTitle').textContent = 'Add Team Member';
     document.getElementById('teamMemberForm').reset();
     document.getElementById('teamMemberId').value = '';
@@ -389,17 +401,17 @@ function openAddTeamMemberModal() {
     document.getElementById('photoPreview').style.display = 'none';
     document.getElementById('dragZoneContent').style.display = 'block';
     document.getElementById('creditsList').innerHTML = '';
+    document.getElementById('placementsList').innerHTML = '';
     document.getElementById('displayOnHome').checked = false;
-    
-    document.getElementById('roleArtist').checked = false;
+
     document.getElementById('roleProducer').checked = false;
+    document.getElementById('roleArtist').checked = false;
+    document.getElementById('roleManager').checked = false;
     document.getElementById('roleEngineer').checked = false;
-    document.getElementById('roleConsultant').checked = false;
-    document.getElementById('roleLawyer').checked = false;
     document.getElementById('roleOther').checked = false;
     document.getElementById('customRoleInput').value = '';
     document.getElementById('customRoleInput').style.display = 'none';
-    
+
     document.getElementById('teamMemberModal').classList.add('show');
     setupDragAndDrop();
 }
@@ -447,21 +459,21 @@ async function editTeamMember(memberId) {
     
     currentEditTeamMemberId = memberId;
     currentTeamCredits = typeof member.credits === 'string' ? JSON.parse(member.credits) : (Array.isArray(member.credits) ? member.credits : []);
+    currentTeamPlacements = typeof member.placements === 'string' ? JSON.parse(member.placements) : (Array.isArray(member.placements) ? member.placements : []);
     
     document.getElementById('teamMemberModalTitle').textContent = 'Edit Team Member';
     document.getElementById('teamMemberId').value = member.id;
     document.getElementById('teamMemberPhotoPath').value = member.photoFile;
     document.getElementById('teamMemberName').value = member.name;
-    
-    document.getElementById('roleArtist').checked = false;
+
     document.getElementById('roleProducer').checked = false;
+    document.getElementById('roleArtist').checked = false;
+    document.getElementById('roleManager').checked = false;
     document.getElementById('roleEngineer').checked = false;
-    document.getElementById('roleConsultant').checked = false;
-    document.getElementById('roleLawyer').checked = false;
     document.getElementById('roleOther').checked = false;
     document.getElementById('customRoleInput').value = '';
     document.getElementById('customRoleInput').style.display = 'none';
-    
+
     let roles = [];
     if (typeof member.role === 'string') {
         try {
@@ -474,13 +486,12 @@ async function editTeamMember(memberId) {
     } else {
         roles = [member.role];
     }
-    
+
     roles.forEach(role => {
-        if (role === 'artist') document.getElementById('roleArtist').checked = true;
-        else if (role === 'producer') document.getElementById('roleProducer').checked = true;
+        if (role === 'producer') document.getElementById('roleProducer').checked = true;
+        else if (role === 'artist') document.getElementById('roleArtist').checked = true;
+        else if (role === 'manager') document.getElementById('roleManager').checked = true;
         else if (role === 'engineer') document.getElementById('roleEngineer').checked = true;
-        else if (role === 'consultant') document.getElementById('roleConsultant').checked = true;
-        else if (role === 'lawyer') document.getElementById('roleLawyer').checked = true;
         else {
             document.getElementById('roleOther').checked = true;
             document.getElementById('customRoleInput').value = role;
@@ -492,13 +503,16 @@ async function editTeamMember(memberId) {
     document.getElementById('displayOnHome').checked = member.displayOnHome || false;
     
     const photoPreview = document.getElementById('photoPreview');
-    photoPreview.src = member.photoFile;
+    photoPreview.src = member.photoData || `${API_URL.replace('/api', '')}/${member.photoFile}`;
     photoPreview.style.display = 'block';
     document.getElementById('dragZoneContent').style.display = 'none';
     
     document.getElementById('creditsList').innerHTML = '';
     currentTeamCredits.forEach(credit => addCreditTag(credit));
-    
+
+    document.getElementById('placementsList').innerHTML = '';
+    currentTeamPlacements.forEach(placement => addPlacementTag(placement));
+
     document.getElementById('teamMemberModal').classList.add('show');
     setupDragAndDrop();
 }
@@ -596,6 +610,44 @@ function removeCredit(credit) {
     `).join('');
 }
 
+// Placements input handler
+document.getElementById('placementInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const placementInput = document.getElementById('placementInput');
+        const placement = placementInput.value.trim();
+        if (placement) {
+            addPlacementTag(placement);
+            placementInput.value = '';
+        }
+    }
+});
+
+function addPlacementTag(placement) {
+    if (!currentTeamPlacements.includes(placement)) {
+        currentTeamPlacements.push(placement);
+    }
+
+    const placementsList = document.getElementById('placementsList');
+    placementsList.innerHTML = currentTeamPlacements.map(p => `
+        <div class="credits-tag" style="background: rgba(76, 175, 80, 0.2); border-color: rgba(76, 175, 80, 0.4);">
+            ${p}
+            <button type="button" class="credits-tag-remove" onclick="removePlacement('${p.replace(/'/g, "\\'")}')" style="color: #4CAF50;">×</button>
+        </div>
+    `).join('');
+}
+
+function removePlacement(placement) {
+    currentTeamPlacements = currentTeamPlacements.filter(p => p !== placement);
+    const placementsList = document.getElementById('placementsList');
+    placementsList.innerHTML = currentTeamPlacements.map(p => `
+        <div class="credits-tag" style="background: rgba(76, 175, 80, 0.2); border-color: rgba(76, 175, 80, 0.4);">
+            ${p}
+            <button type="button" class="credits-tag-remove" onclick="removePlacement('${p.replace(/'/g, "\\'")}')" style="color: #4CAF50;">×</button>
+        </div>
+    `).join('');
+}
+
 document.getElementById('teamMemberForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
@@ -605,11 +657,10 @@ document.getElementById('teamMemberForm').addEventListener('submit', async (e) =
     formData.append('name', document.getElementById('teamMemberName').value);
     
     const selectedRoles = [];
-    if (document.getElementById('roleArtist').checked) selectedRoles.push('artist');
     if (document.getElementById('roleProducer').checked) selectedRoles.push('producer');
+    if (document.getElementById('roleArtist').checked) selectedRoles.push('artist');
+    if (document.getElementById('roleManager').checked) selectedRoles.push('manager');
     if (document.getElementById('roleEngineer').checked) selectedRoles.push('engineer');
-    if (document.getElementById('roleConsultant').checked) selectedRoles.push('consultant');
-    if (document.getElementById('roleLawyer').checked) selectedRoles.push('lawyer');
     if (document.getElementById('roleOther').checked) {
         const customRole = document.getElementById('customRoleInput').value;
         if (customRole) selectedRoles.push(customRole);
@@ -618,6 +669,7 @@ document.getElementById('teamMemberForm').addEventListener('submit', async (e) =
     formData.append('role', JSON.stringify(selectedRoles));
     formData.append('category', 'team');
     formData.append('credits', JSON.stringify(currentTeamCredits));
+    formData.append('placements', JSON.stringify(currentTeamPlacements));
     formData.append('description', document.getElementById('teamMemberBio').value);
     formData.append('displayOnHome', document.getElementById('displayOnHome').checked ? 'true' : 'false');
     

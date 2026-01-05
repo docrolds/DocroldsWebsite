@@ -6,18 +6,11 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
+const nodemailer = require('nodemailer');
 const { PrismaClient } = require('@prisma/client');
-const { PrismaPg } = require('@prisma/adapter-pg');
-const { Pool } = require('pg');
 require('dotenv').config();
 
-const prisma = new PrismaClient({
-  adapter: new PrismaPg(
-    new Pool({
-      connectionString: process.env.DATABASE_URL,
-    })
-  ),
-});
+const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
@@ -82,18 +75,15 @@ const initializeDefaultData = async () => {
     }
 };
 
-const storage = multer.diskStorage({
+// Disk storage for audio files (beats)
+const diskStorage = multer.diskStorage({
     destination: (req, file, cb) => {
         let uploadDir = 'uploads/';
         
         if (file.mimetype.startsWith('audio/')) {
             uploadDir = 'uploads/';
         } else if (file.mimetype.startsWith('image/')) {
-            if (req.body.category) {
-                uploadDir = `uploads/photos/${req.body.category}/`;
-            } else {
-                uploadDir = 'uploads/covers/';
-            }
+            uploadDir = 'uploads/covers/';
             if (!fs.existsSync(uploadDir)) {
                 fs.mkdirSync(uploadDir, { recursive: true });
             }
@@ -106,8 +96,26 @@ const storage = multer.diskStorage({
     }
 });
 
+// Memory storage for photos (stored in database)
+const memoryStorage = multer.memoryStorage();
+
+// Upload for photos (memory storage)
 const upload = multer({ 
-    storage,
+    storage: memoryStorage,
+    fileFilter: (req, file, cb) => {
+        const allowedImage = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        
+        if (allowedImage.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Invalid file type'));
+        }
+    }
+});
+
+// Upload for beats (disk storage)
+const uploadBeats = multer({ 
+    storage: diskStorage,
     fileFilter: (req, file, cb) => {
         const allowedAudio = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/ogg'];
         const allowedImage = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -120,42 +128,29 @@ const upload = multer({
     }
 });
 
-async function processTeamPhoto(filePath) {
+async function processPhotoToBase64(buffer, width = 500, height = 500, quality = 80) {
     try {
-        const processedPath = filePath.replace(/\.[^.]+$/, '-processed.webp');
-        await sharp(filePath)
-            .resize(500, 500, {
+        const processedBuffer = await sharp(buffer)
+            .resize(width, height, {
                 fit: 'cover',
                 position: 'center'
             })
-            .webp({ quality: 80 })
-            .toFile(processedPath);
+            .webp({ quality })
+            .toBuffer();
         
-        fs.unlinkSync(filePath);
-        return processedPath;
+        return `data:image/webp;base64,${processedBuffer.toString('base64')}`;
     } catch (error) {
         console.error('Error processing photo:', error);
-        return filePath;
+        throw error;
     }
 }
 
-async function processCoverArt(filePath) {
-    try {
-        const processedPath = filePath.replace(/\.[^.]+$/, '-processed.webp');
-        await sharp(filePath)
-            .resize(800, 800, {
-                fit: 'cover',
-                position: 'center'
-            })
-            .webp({ quality: 85 })
-            .toFile(processedPath);
-        
-        fs.unlinkSync(filePath);
-        return processedPath;
-    } catch (error) {
-        console.error('Error processing cover art:', error);
-        return filePath;
-    }
+async function processCoverArtToBase64(buffer) {
+    return processPhotoToBase64(buffer, 800, 800, 85);
+}
+
+async function processTeamPhotoToBase64(buffer) {
+    return processPhotoToBase64(buffer, 500, 500, 80);
 }
 
 const authenticateToken = (req, res, next) => {
@@ -362,12 +357,237 @@ app.delete('/api/users/:id', authenticateToken, async (req, res) => {
     }
 });
 
+app.get('/api/team', async (req, res) => {
+    try {
+        // Fetch team members from Photo model (where admin uploads them)
+        // Filter by category='team' and displayOnHome=true for public display
+        const teamMembers = await prisma.photo.findMany({
+            where: {
+                category: 'team',
+                displayOnHome: true
+            },
+            orderBy: {
+                createdAt: 'desc'
+            }
+        });
+
+        // Map to consistent format for frontend
+        const formattedTeam = teamMembers.map(member => ({
+            id: member.id,
+            name: member.name,
+            role: member.role,
+            bio: member.description,
+            credits: member.credits,
+            placements: member.placements,
+            photoData: member.photoData,
+            photoUrl: member.photoFile,
+            displayOnHome: member.displayOnHome,
+            createdAt: member.createdAt
+        }));
+
+        res.json(formattedTeam);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+app.post('/api/team', authenticateToken, upload.single('photo'), async (req, res) => {
+    try {
+        const { name, role, bio } = req.body;
+        const photoUrl = req.file ? `/uploads/team/${req.file.filename}` : '';
+
+        const newTeamMember = await prisma.teamMember.create({
+            data: {
+                name,
+                role,
+                bio,
+                photoUrl
+            }
+        });
+
+        res.status(201).json(newTeamMember);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+app.put('/api/team/:id', authenticateToken, upload.single('photo'), async (req, res) => {
+    try {
+        const { name, role, bio } = req.body;
+        let photoUrl = req.body.photoUrl;
+
+        if (req.file) {
+            photoUrl = `/uploads/team/${req.file.filename}`;
+        }
+
+        const updatedTeamMember = await prisma.teamMember.update({
+            where: { id: req.params.id },
+            data: {
+                name,
+                role,
+                bio,
+                photoUrl
+            }
+        });
+
+        res.json(updatedTeamMember);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+app.delete('/api/team/:id', authenticateToken, async (req, res) => {
+    try {
+        await prisma.teamMember.delete({
+            where: { id: req.params.id }
+        });
+        res.json({ message: 'Team member deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+app.get('/api/content', async (req, res) => {
+    try {
+        const content = await prisma.content.findMany();
+        const contentMap = content.reduce((acc, item) => {
+            acc[item.key] = item.value;
+            return acc;
+        }, {});
+        res.json(contentMap);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+app.put('/api/content/:key', authenticateToken, async (req, res) => {
+    try {
+        const { key } = req.params;
+        const { value } = req.body;
+
+        const updatedContent = await prisma.content.update({
+            where: { key },
+            data: { value },
+        });
+
+        res.json(updatedContent.value);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
 const mockBeats = [
     { title: 'Midnight Vibes', genre: 'Hip-Hop', category: 'Hip-Hop', bpm: 92, key: 'C Minor', duration: 165 },
     { title: 'Bass Trap', genre: 'Trap', category: 'Trap', bpm: 140, key: 'A Minor', duration: 180 },
     { title: 'Smooth Flows', genre: 'R&B', category: 'R&B', bpm: 95, key: 'F Major', duration: 200 },
     { title: 'Electric Dreams', genre: 'Pop', category: 'Pop', bpm: 120, key: 'G Major', duration: 210 }
 ];
+
+app.get('/api/photos', async (req, res) => {
+    try {
+        const photos = await prisma.photo.findMany();
+        res.json(photos);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+// Photo endpoints with database storage
+app.get('/api/photos', async (req, res) => {
+    try {
+        const photos = await prisma.photo.findMany();
+        res.json(photos);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+app.post('/api/photos', authenticateToken, upload.single('photoFile'), async (req, res) => {
+    try {
+        const { name, role, credits, placements, category, description, displayOnHome } = req.body;
+
+        if (!category) {
+            return res.status(400).json({ message: 'Category is required' });
+        }
+
+        let photoData = null;
+        let mimeType = null;
+
+        if (req.file) {
+            mimeType = req.file.mimetype;
+            photoData = await processTeamPhotoToBase64(req.file.buffer);
+        }
+
+        const newPhoto = await prisma.photo.create({
+            data: {
+                name: name || 'Untitled Photo',
+                role: role || '',
+                credits: credits || '',
+                placements: placements || '',
+                category,
+                description: description || '',
+                photoData,
+                mimeType,
+                displayOnHome: displayOnHome === 'true' || displayOnHome === true
+            }
+        });
+
+        res.status(201).json(newPhoto);
+    } catch (error) {
+        console.error('Photo upload error:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+app.put('/api/photos/:id', authenticateToken, upload.single('photoFile'), async (req, res) => {
+    try {
+        const { name, role, credits, placements, category, description, displayOnHome } = req.body;
+        const photo = await prisma.photo.findUnique({
+            where: { id: req.params.id }
+        });
+
+        if (!photo) {
+            return res.status(404).json({ message: 'Photo not found' });
+        }
+
+        const updateData = {
+            ...(name && { name }),
+            ...(role && { role }),
+            ...(credits && { credits }),
+            ...(placements !== undefined && { placements }),
+            ...(category && { category }),
+            ...(description && { description }),
+            ...(displayOnHome !== undefined && { displayOnHome: displayOnHome === 'true' || displayOnHome === true })
+        };
+
+        if (req.file) {
+            updateData.photoData = await processTeamPhotoToBase64(req.file.buffer);
+            updateData.mimeType = req.file.mimetype;
+        }
+
+        const updatedPhoto = await prisma.photo.update({
+            where: { id: req.params.id },
+            data: updateData
+        });
+        
+        res.json(updatedPhoto);
+    } catch (error) {
+        console.error('Photo update error:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+app.delete('/api/photos/:id', authenticateToken, async (req, res) => {
+    try {
+        await prisma.photo.delete({
+            where: { id: req.params.id }
+        });
+        res.json({ message: 'Photo deleted successfully' });
+    } catch (error) {
+        console.error('Photo delete error:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
 
 app.get('/api/beats', async (req, res) => {
     try {
@@ -381,22 +601,34 @@ app.get('/api/beats', async (req, res) => {
     }
 });
 
-app.post('/api/beats', authenticateToken, upload.array('files', 2), async (req, res) => {
+app.post('/api/beats', authenticateToken, uploadBeats.fields([
+    { name: 'audioFile', maxCount: 1 },
+    { name: 'wavFile', maxCount: 1 },
+    { name: 'coverArt', maxCount: 1 }
+]), async (req, res) => {
     try {
         const { title, genre, category, bpm, key, duration, price } = req.body;
 
         let audioFile = null;
+        let wavFile = null;
         let coverArt = null;
 
         if (req.files) {
-            for (const file of req.files) {
-                if (file.mimetype.startsWith('audio/')) {
-                    audioFile = `/uploads/${file.filename}`;
-                } else if (file.mimetype.startsWith('image/')) {
-                    const uploadPath = `uploads/covers/${file.filename}`;
-                    const processedPath = await processCoverArt(uploadPath);
-                    coverArt = processedPath.replace(/\\/g, '/');
-                }
+            // Handle MP3 preview file
+            if (req.files.audioFile && req.files.audioFile[0]) {
+                audioFile = `/uploads/${req.files.audioFile[0].filename}`;
+            }
+
+            // Handle WAV file
+            if (req.files.wavFile && req.files.wavFile[0]) {
+                wavFile = `/uploads/${req.files.wavFile[0].filename}`;
+            }
+
+            // Handle cover art
+            if (req.files.coverArt && req.files.coverArt[0]) {
+                const uploadPath = `uploads/covers/${req.files.coverArt[0].filename}`;
+                const processedPath = await processCoverArt(uploadPath);
+                coverArt = processedPath.replace(/\\/g, '/');
             }
         }
 
@@ -410,6 +642,7 @@ app.post('/api/beats', authenticateToken, upload.array('files', 2), async (req, 
                 duration: duration ? parseInt(duration) : null,
                 price: price ? parseFloat(price) : null,
                 audioFile,
+                wavFile,
                 coverArt
             }
         });
@@ -420,7 +653,11 @@ app.post('/api/beats', authenticateToken, upload.array('files', 2), async (req, 
     }
 });
 
-app.put('/api/beats/:id', authenticateToken, upload.array('files', 2), async (req, res) => {
+app.put('/api/beats/:id', authenticateToken, uploadBeats.fields([
+    { name: 'audioFile', maxCount: 1 },
+    { name: 'wavFile', maxCount: 1 },
+    { name: 'coverArt', maxCount: 1 }
+]), async (req, res) => {
     try {
         const { title, genre, category, bpm, key, duration, price } = req.body;
         const beat = await prisma.beat.findUnique({
@@ -441,15 +678,22 @@ app.put('/api/beats/:id', authenticateToken, upload.array('files', 2), async (re
             ...(price && { price: parseFloat(price) })
         };
 
-        if (req.files && req.files.length > 0) {
-            for (const file of req.files) {
-                if (file.mimetype.startsWith('audio/')) {
-                    updateData.audioFile = `/uploads/${file.filename}`;
-                } else if (file.mimetype.startsWith('image/')) {
-                    const uploadPath = `uploads/covers/${file.filename}`;
-                    const processedPath = await processCoverArt(uploadPath);
-                    updateData.coverArt = processedPath.replace(/\\/g, '/');
-                }
+        if (req.files) {
+            // Handle MP3 preview file
+            if (req.files.audioFile && req.files.audioFile[0]) {
+                updateData.audioFile = `/uploads/${req.files.audioFile[0].filename}`;
+            }
+
+            // Handle WAV file
+            if (req.files.wavFile && req.files.wavFile[0]) {
+                updateData.wavFile = `/uploads/${req.files.wavFile[0].filename}`;
+            }
+
+            // Handle cover art
+            if (req.files.coverArt && req.files.coverArt[0]) {
+                const uploadPath = `uploads/covers/${req.files.coverArt[0].filename}`;
+                const processedPath = await processCoverArt(uploadPath);
+                updateData.coverArt = processedPath.replace(/\\/g, '/');
             }
         }
 
@@ -521,7 +765,7 @@ app.post('/api/photos', authenticateToken, upload.single('photoFile'), async (re
 
 app.put('/api/photos/:id', authenticateToken, upload.single('photoFile'), async (req, res) => {
     try {
-        const { name, role, credits, category, description, displayOnHome } = req.body;
+        const { name, role, credits, placements, category, description, displayOnHome } = req.body;
         const photo = await prisma.photo.findUnique({
             where: { id: req.params.id }
         });
@@ -534,6 +778,7 @@ app.put('/api/photos/:id', authenticateToken, upload.single('photoFile'), async 
             ...(name && { name }),
             ...(role && { role }),
             ...(credits && { credits }),
+            ...(placements !== undefined && { placements }),
             ...(category && { category }),
             ...(description && { description }),
             ...(displayOnHome !== undefined && { displayOnHome: displayOnHome === 'true' || displayOnHome === true })
@@ -570,6 +815,77 @@ app.delete('/api/photos/:id', authenticateToken, async (req, res) => {
     }
 });
 
+// Email configuration for contact form
+const emailTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER || 'Docroldsllc@gmail.com',
+        pass: process.env.EMAIL_APP_PASS
+    }
+});
+
+// Contact form endpoint
+app.post('/api/contact', async (req, res) => {
+    try {
+        const { name, email, phone, message } = req.body;
+
+        // Validate required fields
+        if (!name || !email || !message) {
+            return res.status(400).json({ message: 'Name, email, and message are required' });
+        }
+
+        // Email content
+        const mailOptions = {
+            from: process.env.EMAIL_USER || 'Docroldsllc@gmail.com',
+            to: 'Docroldsllc@gmail.com',
+            replyTo: email,
+            subject: `New Contact Form Submission from ${name}`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #E83628; border-bottom: 2px solid #E83628; padding-bottom: 10px;">
+                        New Contact Form Submission
+                    </h2>
+                    <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>Name:</strong> ${name}</p>
+                        <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
+                        <p><strong>Phone:</strong> ${phone || 'Not provided'}</p>
+                    </div>
+                    <div style="background: #fff; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+                        <h3 style="color: #333; margin-top: 0;">Message:</h3>
+                        <p style="color: #555; line-height: 1.6;">${message.replace(/\n/g, '<br>')}</p>
+                    </div>
+                    <p style="color: #999; font-size: 12px; margin-top: 20px;">
+                        This email was sent from the Doc Rolds website contact form.
+                    </p>
+                </div>
+            `,
+            text: `
+New Contact Form Submission
+
+Name: ${name}
+Email: ${email}
+Phone: ${phone || 'Not provided'}
+
+Message:
+${message}
+
+---
+This email was sent from the Doc Rolds website contact form.
+            `
+        };
+
+        // Send email
+        await emailTransporter.sendMail(mailOptions);
+
+        console.log(`[CONTACT] Email sent from ${name} (${email})`);
+        res.json({ message: 'Message sent successfully' });
+
+    } catch (error) {
+        console.error('[CONTACT] Error sending email:', error);
+        res.status(500).json({ message: 'Failed to send message', error: error.message });
+    }
+});
+
 const runMigrations = async () => {
     try {
         const { execSync } = require('child_process');
@@ -594,9 +910,8 @@ const runMigrations = async () => {
         }
     } catch (error) {
         console.error('[MIGRATE] Migration error:', error.message);
-        console.error('[MIGRATE] Full error:', error);
-        // Don't continue - we need migrations to succeed
-        throw error;
+        console.warn('[MIGRATE] Continuing without migrations (database may be unavailable)...');
+        // Continue anyway for local development
     }
 };
 

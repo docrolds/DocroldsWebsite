@@ -4,6 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -24,7 +25,8 @@ model Beat {
   key       String?
   duration  Int?
   price     Float?
-  audioFile String?
+  audioFile String?  // MP3 preview file
+  wavFile   String?  // Full quality WAV file
   coverArt  String?
   createdAt DateTime @default(now())
 }
@@ -34,9 +36,27 @@ model Photo {
   name          String
   role          String?
   credits       String?
+  placements    String?  // JSON array of placement strings
   category      String
   description   String?
-  photoFile     String
+  photoData     String?  @db.Text // Base64 encoded photo data
+  photoFile     String?  // Legacy field for migration
+  mimeType      String?  // Store original mime type
   displayOnHome Boolean  @default(false)
   createdAt     DateTime @default(now())
+}
+
+model Content {
+  id    String @id @default(cuid())
+  key   String @unique
+  value Json
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  name      String
+  role      String
+  bio       String
+  photoUrl  String
+  createdAt DateTime @default(now())
 }

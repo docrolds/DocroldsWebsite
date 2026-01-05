@@ -4,14 +4,50 @@
   box-sizing: border-box;
 }
 
+html {
+  scrollbar-width: thin;
+  scrollbar-color: #E83628 #1a1a1a;
+  background-color: #000;
+  scroll-behavior: smooth;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #E83628, #a02a20);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ff4436, #E83628);
+}
+
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   line-height: 1.6;
   color: #e0e0e0;
   background-color: #000;
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+/* Smooth transitions for all interactive elements */
+a, button {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+section {
+  margin: 0;
 }
 
 #root {
@@ -22,9 +58,6 @@ body {
 main {
   max-width: 100%;
   margin: 0 auto;
-  padding: 0 2rem;
+  padding: 0;
 }
 
-section {
-  margin: 4rem 0;
-}
