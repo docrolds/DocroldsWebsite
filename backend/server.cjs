@@ -28,7 +28,8 @@ const allowedOrigins = [
     'https://docrolds.vercel.app',
     'https://livedeployment.vercel.app',
     'https://www.docrolds.com',
-    'https://docrolds.com'
+    'https://docrolds.com',
+    'https://api.docrolds.com'
 ];
 
 // Security middleware
