@@ -15,5 +15,5 @@ services:
       - key: ADMIN_PASSWORD
         value: ***REDACTED-PASSWORD***
       - key: DATABASE_URL
-        value: "postgresql://docrolds_user:***REDACTED-DB-PASSWORD***@***REDACTED-DB-HOST***.oregon-postgres.render.com/docrolds"
+        value: "postgresql://***REDACTED-DB-USER***:***REDACTED-DB-PASSWORD***@***REDACTED-DB-HOST***/docsbackendstorage"
     autoDeploy: true
