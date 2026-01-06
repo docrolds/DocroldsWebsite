@@ -5,7 +5,8 @@
 # Env files
 .env
 .env.local
-.env.production
+# Note: .env.staging is tracked for staging branch deployment
+# .env.production is tracked for production branch
 
 # Log files
 npm-debug.log*
