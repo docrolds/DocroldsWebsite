@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -24,23 +26,45 @@ const allowedOrigins = [
     'http://127.0.0.1:3000',
     'https://docrolds-frontend.vercel.app',
     'https://docrolds.vercel.app',
+    'https://livedeployment.vercel.app',
     'https://www.docrolds.com',
     'https://docrolds.com'
 ];
 
+// Security middleware
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+// Rate limiter for login attempts
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // 5 attempts per window
+    message: { message: 'Too many login attempts, please try again after 15 minutes' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+// CORS configuration - only allow known origins
 app.use(cors({
     origin: function (origin, callback) {
-        if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        // Allow requests with no origin (mobile apps, Postman, etc.)
+        if (!origin) {
             callback(null, true);
-        } else if (origin.includes('vercel.app')) {
-            callback(null, true);
-        } else if (origin.includes('docrolds')) {
-            callback(null, true);
-        } else if (allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(null, true);
+            return;
         }
+        // Allow localhost for development
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+            callback(null, true);
+            return;
+        }
+        // Check if origin is in allowed list
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+            return;
+        }
+        // Reject unknown origins
+        callback(new Error('Not allowed by CORS'));
     },
     credentials: true
 }));
@@ -51,9 +75,31 @@ if (!fs.existsSync('uploads')) {
     fs.mkdirSync('uploads');
 }
 
+// Helper to sanitize filenames
+const sanitizeFilename = (filename) => {
+    return filename.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 200);
+};
+
+// Helper to escape HTML for email templates
+const escapeHtml = (text) => {
+    if (!text) return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+};
+
+// Email validation helper
+const isValidEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+};
+
 const initializeDefaultData = async () => {
     try {
-        console.log(`[INIT] Checking for admin user: ${ADMIN_USERNAME}`);
+        console.log('[INIT] Checking for admin user...');
         const hashedPassword = await bcrypt.hash(ADMIN_PASSWORD, 10);
         await prisma.user.upsert({
             where: { username: ADMIN_USERNAME },
@@ -65,13 +111,9 @@ const initializeDefaultData = async () => {
                 role: 'admin'
             }
         });
-        console.log(`[INIT] ✓ Default admin user configured: ${ADMIN_USERNAME}`);
+        console.log('[INIT] ✓ Default admin user configured');
     } catch (error) {
-        console.error('[INIT] Error initializing default data:', error);
-        console.error('[INIT] Error details:', error.message);
-        if (error.code) {
-            console.error('[INIT] Error code:', error.code);
-        }
+        console.error('[INIT] Error initializing default data:', error.message);
     }
 };
 
@@ -92,7 +134,7 @@ const diskStorage = multer.diskStorage({
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
-        cb(null, Date.now() + '-' + file.originalname);
+        cb(null, Date.now() + '-' + sanitizeFilename(file.originalname));
     }
 });
 
@@ -170,18 +212,22 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
+// Protected: Only works if no admin exists yet
 app.post('/api/auth/admin-setup', async (req, res) => {
     try {
+        // Check if admin already exists
+        const existingAdmin = await prisma.user.findFirst({
+            where: { role: 'admin' }
+        });
+
+        if (existingAdmin) {
+            return res.status(403).json({ message: 'Admin already configured. Use admin panel to manage users.' });
+        }
+
         const hashedPassword = await bcrypt.hash(ADMIN_PASSWORD, 10);
-        
-        const result = await prisma.user.upsert({
-            where: { username: ADMIN_USERNAME },
-            update: {
-                password: hashedPassword,
-                email: 'admin@docrolds.com',
-                role: 'admin'
-            },
-            create: {
+
+        const result = await prisma.user.create({
+            data: {
                 username: ADMIN_USERNAME,
                 email: 'admin@docrolds.com',
                 password: hashedPassword,
@@ -203,7 +249,8 @@ app.post('/api/auth/admin-setup', async (req, res) => {
     }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+// Rate limited login endpoint
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
     try {
         const { username, password } = req.body;
 
@@ -211,26 +258,17 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ message: 'Username and password are required' });
         }
 
-        console.log(`[LOGIN] Attempting login for username: ${username}`);
-        console.log(`[LOGIN] Password provided: ${password ? 'yes' : 'no'}`);
-
         const user = await prisma.user.findUnique({
             where: { username }
         });
-        
+
         if (!user) {
-            console.log(`[LOGIN] User not found: ${username}`);
             return res.status(401).json({ message: 'Invalid credentials' });
         }
 
-        console.log(`[LOGIN] User found: ${user.username}, role: ${user.role}`);
-        console.log(`[LOGIN] Comparing password...`);
-
         const validPassword = await bcrypt.compare(password, user.password);
-        console.log(`[LOGIN] Password valid: ${validPassword}`);
-        
+
         if (!validPassword) {
-            console.log(`[LOGIN] Invalid password for user: ${username}`);
             return res.status(401).json({ message: 'Invalid credentials' });
         }
 
@@ -240,7 +278,6 @@ app.post('/api/auth/login', async (req, res) => {
             { expiresIn: '24h' }
         );
 
-        console.log(`[LOGIN] Successful login for user: ${username}`);
         res.json({
             token,
             user: {
@@ -251,12 +288,21 @@ app.post('/api/auth/login', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('[LOGIN] Error:', error);
-        res.status(500).json({ message: 'Server error', error: error.message });
+        console.error('[LOGIN] Server error');
+        res.status(500).json({ message: 'Server error' });
     }
 });
 
-app.get('/api/users', authenticateToken, async (req, res) => {
+// Admin authorization middleware
+const requireAdmin = (req, res, next) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required' });
+    }
+    next();
+};
+
+// Admin-only: Get all users
+app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const users = await prisma.user.findMany({
             select: {
@@ -273,9 +319,21 @@ app.get('/api/users', authenticateToken, async (req, res) => {
     }
 });
 
-app.post('/api/users', authenticateToken, async (req, res) => {
+// Admin-only: Create user with validation
+app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { username, email, password, role } = req.body;
+
+        // Input validation
+        if (!username || username.length < 3) {
+            return res.status(400).json({ message: 'Username must be at least 3 characters' });
+        }
+        if (!password || password.length < 6) {
+            return res.status(400).json({ message: 'Password must be at least 6 characters' });
+        }
+        if (email && !isValidEmail(email)) {
+            return res.status(400).json({ message: 'Invalid email format' });
+        }
 
         const existingUser = await prisma.user.findUnique({
             where: { username }
@@ -301,7 +359,8 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     }
 });
 
-app.put('/api/users/:id', authenticateToken, async (req, res) => {
+// Admin-only: Update user with validation
+app.put('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { username, email, password, role } = req.body;
         const user = await prisma.user.findUnique({
@@ -310,6 +369,17 @@ app.put('/api/users/:id', authenticateToken, async (req, res) => {
 
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Input validation
+        if (username && username.length < 3) {
+            return res.status(400).json({ message: 'Username must be at least 3 characters' });
+        }
+        if (password && password.length < 6) {
+            return res.status(400).json({ message: 'Password must be at least 6 characters' });
+        }
+        if (email && !isValidEmail(email)) {
+            return res.status(400).json({ message: 'Invalid email format' });
         }
 
         if (username && username !== user.username) {
@@ -343,7 +413,8 @@ app.put('/api/users/:id', authenticateToken, async (req, res) => {
     }
 });
 
-app.delete('/api/users/:id', authenticateToken, async (req, res) => {
+// Admin-only: Delete user
+app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const user = await prisma.user.delete({
             where: { id: req.params.id }
@@ -721,7 +792,7 @@ const emailTransporter = nodemailer.createTransport({
     }
 });
 
-// Contact form endpoint
+// Contact form endpoint with validation and XSS protection
 app.post('/api/contact', async (req, res) => {
     try {
         const { name, email, phone, message } = req.body;
@@ -731,25 +802,36 @@ app.post('/api/contact', async (req, res) => {
             return res.status(400).json({ message: 'Name, email, and message are required' });
         }
 
+        // Validate email format
+        if (!isValidEmail(email)) {
+            return res.status(400).json({ message: 'Invalid email format' });
+        }
+
+        // Escape HTML to prevent XSS in email
+        const safeName = escapeHtml(name);
+        const safeEmail = escapeHtml(email);
+        const safePhone = escapeHtml(phone || 'Not provided');
+        const safeMessage = escapeHtml(message).replace(/\n/g, '<br>');
+
         // Email content
         const mailOptions = {
             from: process.env.EMAIL_USER || 'Docroldsllc@gmail.com',
             to: 'Docroldsllc@gmail.com',
             replyTo: email,
-            subject: `New Contact Form Submission from ${name}`,
+            subject: `New Contact Form Submission from ${safeName}`,
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <h2 style="color: #E83628; border-bottom: 2px solid #E83628; padding-bottom: 10px;">
                         New Contact Form Submission
                     </h2>
                     <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                        <p><strong>Name:</strong> ${name}</p>
-                        <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
-                        <p><strong>Phone:</strong> ${phone || 'Not provided'}</p>
+                        <p><strong>Name:</strong> ${safeName}</p>
+                        <p><strong>Email:</strong> <a href="mailto:${safeEmail}">${safeEmail}</a></p>
+                        <p><strong>Phone:</strong> ${safePhone}</p>
                     </div>
                     <div style="background: #fff; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
                         <h3 style="color: #333; margin-top: 0;">Message:</h3>
-                        <p style="color: #555; line-height: 1.6;">${message.replace(/\n/g, '<br>')}</p>
+                        <p style="color: #555; line-height: 1.6;">${safeMessage}</p>
                     </div>
                     <p style="color: #999; font-size: 12px; margin-top: 20px;">
                         This email was sent from the Doc Rolds website contact form.
@@ -774,12 +856,12 @@ This email was sent from the Doc Rolds website contact form.
         // Send email
         await emailTransporter.sendMail(mailOptions);
 
-        console.log(`[CONTACT] Email sent from ${name} (${email})`);
+        console.log('[CONTACT] Email sent successfully');
         res.json({ message: 'Message sent successfully' });
 
     } catch (error) {
-        console.error('[CONTACT] Error sending email:', error);
-        res.status(500).json({ message: 'Failed to send message', error: error.message });
+        console.error('[CONTACT] Error sending email:', error.message);
+        res.status(500).json({ message: 'Failed to send message' });
     }
 });
 
