@@ -205,7 +205,7 @@ async function loadBeats() {
                 <td>${beat.genre}</td>
                 <td>${beat.bpm}</td>
                 <td>${beat.key}</td>
-                <td>$${beat.price.toFixed(2)}</td>
+                <td>$${beat.price ? beat.price.toFixed(2) : '0.00'}</td>
                 <td>
                     <div class="action-btns">
                         <button class="action-btn" onclick="editBeat(${beat.id})">
