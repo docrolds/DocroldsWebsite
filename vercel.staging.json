@@ -1,0 +1,20 @@
+{
+  "build": {
+    "env": {
+      "VITE_API_URL": "https://docrolds-staging-api.onrender.com/api",
+      "VITE_ENV": "staging"
+    }
+  },
+  "outputDirectory": "frontend/dist",
+  "cleanUrls": false,
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/admin.html", "destination": "/admin.html" },
+    { "source": "/beats", "destination": "/beats.html" },
+    { "source": "/beats.html", "destination": "/beats.html" },
+    { "source": "/login", "destination": "/login.html" },
+    { "source": "/login.html", "destination": "/login.html" },
+    { "source": "/", "destination": "/index.html" }
+  ]
+}
