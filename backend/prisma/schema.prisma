@@ -17,18 +17,162 @@ model User {
 }
 
 model Beat {
-  id        String   @id @default(cuid())
-  title     String
-  genre     String?
-  category  String?
-  bpm       Int?
-  key       String?
-  duration  Int?
-  price     Float?
-  audioFile String?  // MP3 preview file
-  wavFile   String?  // Full quality WAV file
-  coverArt  String?
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  title      String
+  genre      String?
+  category   String?
+  bpm        Int?
+  key        String?
+  duration   Int?
+  price      Float?
+  producedBy String?  // Producer name(s) - comma-separated if multiple
+  audioFile  String?  // MP3 preview file
+  wavFile    String?  // Full quality WAV file
+  coverArt   String?
+  createdAt  DateTime @default(now())
+
+  // Relations for payment system & social features
+  orderItems    OrderItem[]
+  likes         BeatLike[]
+  playlistBeats PlaylistBeat[]
+  comments      Comment[]
+}
+
+// ==========================================
+// CUSTOMER & PAYMENT MODELS
+// ==========================================
+
+model Customer {
+  id               String     @id @default(cuid())
+  email            String     @unique
+  firstName        String?
+  lastName         String?
+  stageName        String?
+  username         String?    @unique
+  password         String?    // Null for guest checkout
+  phone            String?
+  profession       String?
+  dateOfBirth      DateTime?
+  city             String?
+  state            String?
+  profilePicture   String?    // URL to uploaded image
+  stripeCustomerId String?    @unique
+  isGuest          Boolean    @default(true)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  // Relations
+  orders        Order[]
+  likes         BeatLike[]
+  playlists     Playlist[]
+  comments      Comment[]
+  notifications Notification[]
+}
+
+model Order {
+  id                String      @id @default(cuid())
+  orderNumber       String      @unique  // Format: DR-2024-00001
+  customerId        String
+  customer          Customer    @relation(fields: [customerId], references: [id])
+  status            String      @default("PENDING") // PENDING, COMPLETED, CANCELLED, REFUNDED
+  paymentStatus     String      @default("PENDING") // PENDING, PAID, FAILED, REFUNDED
+  stripeSessionId   String?     @unique
+  stripePaymentId   String?
+  subtotal          Float
+  total             Float
+  downloadToken     String      @unique @default(cuid())
+  downloadExpiresAt DateTime?   // 7 days for guests, null for accounts (unlimited)
+  downloadCount     Int         @default(0)
+  emailSent         Boolean     @default(false)
+  notes             String?     // Admin notes
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  items OrderItem[]
+}
+
+model OrderItem {
+  id          String @id @default(cuid())
+  orderId     String
+  order       Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  beatId      String
+  beat        Beat   @relation(fields: [beatId], references: [id])
+  licenseType String // STANDARD, UNLIMITED
+  licenseName String // "Standard Lease", "Unlimited Lease"
+  price       Float
+}
+
+// ==========================================
+// SOCIAL FEATURES MODELS
+// ==========================================
+
+model BeatLike {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  beatId     String
+  beat       Beat     @relation(fields: [beatId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([customerId, beatId])
+}
+
+model Playlist {
+  id         String         @id @default(cuid())
+  customerId String
+  customer   Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  name       String
+  isDefault  Boolean        @default(false) // "Saved Beats" default playlist
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  beats PlaylistBeat[]
+}
+
+model PlaylistBeat {
+  id         String   @id @default(cuid())
+  playlistId String
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  beatId     String
+  beat       Beat     @relation(fields: [beatId], references: [id], onDelete: Cascade)
+  addedAt    DateTime @default(now())
+
+  @@unique([playlistId, beatId])
+}
+
+model Comment {
+  id         String    @id @default(cuid())
+  customerId String
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  beatId     String
+  beat       Beat      @relation(fields: [beatId], references: [id], onDelete: Cascade)
+  content    String
+  isReported Boolean   @default(false)
+  reportedAt DateTime?
+  reportedBy String?   // customerId who reported
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+// ==========================================
+// NOTIFICATION SYSTEM
+// ==========================================
+
+model Notification {
+  id         String    @id @default(cuid())
+  customerId String
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type       String    // ORDER_COMPLETED, DOWNLOAD_READY, DOWNLOAD_EXPIRING, WELCOME
+  title      String
+  message    String
+  data       Json?     // Store order IDs, beat IDs, action URLs, etc.
+  isRead     Boolean   @default(false)
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([customerId])
+  @@index([customerId, isRead])
+  @@index([createdAt])
 }
 
 model Photo {

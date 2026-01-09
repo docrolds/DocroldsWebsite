@@ -343,6 +343,35 @@
             color: #3b82f6;
         }
 
+        /* Order status badges */
+        .badge-status {
+            padding: 0.25rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-paid, .badge-completed {
+            background: rgba(34, 197, 94, 0.15);
+            color: #22c55e;
+        }
+
+        .badge-pending {
+            background: rgba(234, 179, 8, 0.15);
+            color: #eab308;
+        }
+
+        .badge-failed, .badge-cancelled {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+        }
+
+        .badge-refunded {
+            background: rgba(168, 85, 247, 0.15);
+            color: #a855f7;
+        }
+
         .action-btns {
             display: flex;
             gap: 0.5rem;
@@ -361,6 +390,67 @@
         .action-btn:hover {
             background: rgba(255, 255, 255, 0.05);
             color: #E83628;
+        }
+
+        .beat-play-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(232, 54, 40, 0.1);
+            border: 1px solid rgba(232, 54, 40, 0.3);
+            color: #E83628;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .beat-play-btn:hover:not(:disabled) {
+            background: #E83628;
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .beat-play-btn:disabled {
+            background: rgba(128, 128, 128, 0.1);
+            border-color: rgba(128, 128, 128, 0.2);
+            color: #666;
+        }
+
+        .beat-progress-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .beat-progress-bar {
+            flex: 1;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .beat-progress-bar:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .beat-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #E83628, #ff6b47);
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.1s linear;
+        }
+
+        .beat-time {
+            font-size: 0.7rem;
+            color: #888;
+            min-width: 70px;
+            text-align: right;
         }
 
         .modal {
@@ -738,6 +828,18 @@
                         <i class="fas fa-user-cog"></i>
                         <span>Users</span>
                     </div>
+                    <div class="nav-item" data-section="customers">
+                        <i class="fas fa-shopping-cart"></i>
+                        <span>Customers</span>
+                    </div>
+                    <div class="nav-item" data-section="orders">
+                        <i class="fas fa-receipt"></i>
+                        <span>Orders</span>
+                    </div>
+                    <div class="nav-item" data-section="metrics">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Metrics</span>
+                    </div>
                 </div>
             </nav>
         </aside>
@@ -797,6 +899,7 @@
                                 <thead>
                                     <tr>
                                         <th>Title</th>
+                                        <th>Produced By</th>
                                         <th>Genre</th>
                                         <th>BPM</th>
                                         <th>Key</th>
@@ -850,8 +953,184 @@
                         </div>
                     </div>
                 </section>
+
+                <section class="content-section" id="customers-section">
+                    <div class="page-header">
+                        <h1 class="page-title">Customers</h1>
+                        <p class="page-subtitle">Manage customer accounts and view their activity</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">All Customers</h2>
+                        </div>
+                        <div class="table-container">
+                            <table id="customersTable">
+                                <thead>
+                                    <tr>
+                                        <th>Email</th>
+                                        <th>Name</th>
+                                        <th>Stage Name</th>
+                                        <th>Orders</th>
+                                        <th>Joined</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="customersTableBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="content-section" id="orders-section">
+                    <div class="page-header">
+                        <h1 class="page-title">Orders</h1>
+                        <p class="page-subtitle">View and manage customer orders</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title">All Orders</h2>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <select id="orderStatusFilter" class="form-input" style="width: auto; padding: 0.5rem 1rem;" onchange="filterOrders()">
+                                    <option value="">All Statuses</option>
+                                    <option value="PENDING">Pending</option>
+                                    <option value="COMPLETED">Completed</option>
+                                    <option value="CANCELLED">Cancelled</option>
+                                </select>
+                                <select id="orderPaymentFilter" class="form-input" style="width: auto; padding: 0.5rem 1rem;" onchange="filterOrders()">
+                                    <option value="">All Payments</option>
+                                    <option value="PENDING">Payment Pending</option>
+                                    <option value="PAID">Paid</option>
+                                    <option value="FAILED">Failed</option>
+                                    <option value="REFUNDED">Refunded</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="table-container">
+                            <table id="ordersTable">
+                                <thead>
+                                    <tr>
+                                        <th>Order #</th>
+                                        <th>Customer</th>
+                                        <th>Items</th>
+                                        <th>Total</th>
+                                        <th>Payment</th>
+                                        <th>Status</th>
+                                        <th>Date</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ordersTableBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="content-section" id="metrics-section">
+                    <div class="page-header">
+                        <h1 class="page-title">Order Metrics</h1>
+                        <p class="page-subtitle">Analytics and performance insights</p>
+                    </div>
+
+                    <!-- Period Filter -->
+                    <div style="margin-bottom: 1.5rem;">
+                        <select id="metricsPeriodFilter" class="form-input" style="width: auto; padding: 0.5rem 1rem;" onchange="loadMetrics()">
+                            <option value="7d">Last 7 Days</option>
+                            <option value="30d" selected>Last 30 Days</option>
+                            <option value="90d">Last 90 Days</option>
+                        </select>
+                    </div>
+
+                    <!-- Summary Cards -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+                        <div class="card" style="margin-bottom: 0;">
+                            <div style="display: flex; align-items: center; gap: 1rem;">
+                                <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(34, 197, 94, 0.15); display: flex; align-items: center; justify-content: center;">
+                                    <i class="fas fa-shopping-bag" style="color: #22c55e; font-size: 1.25rem;"></i>
+                                </div>
+                                <div>
+                                    <div style="font-size: 0.85rem; color: #9ca3af;">Total Orders</div>
+                                    <div id="metricsTotalOrders" style="font-size: 1.75rem; font-weight: 700; color: #fff;">-</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card" style="margin-bottom: 0;">
+                            <div style="display: flex; align-items: center; gap: 1rem;">
+                                <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(232, 54, 40, 0.15); display: flex; align-items: center; justify-content: center;">
+                                    <i class="fas fa-dollar-sign" style="color: #E83628; font-size: 1.25rem;"></i>
+                                </div>
+                                <div>
+                                    <div style="font-size: 0.85rem; color: #9ca3af;">Total Revenue</div>
+                                    <div id="metricsTotalRevenue" style="font-size: 1.75rem; font-weight: 700; color: #fff;">-</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card" style="margin-bottom: 0;">
+                            <div style="display: flex; align-items: center; gap: 1rem;">
+                                <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(59, 130, 246, 0.15); display: flex; align-items: center; justify-content: center;">
+                                    <i class="fas fa-check-circle" style="color: #3b82f6; font-size: 1.25rem;"></i>
+                                </div>
+                                <div>
+                                    <div style="font-size: 0.85rem; color: #9ca3af;">Completed Orders</div>
+                                    <div id="metricsCompletedOrders" style="font-size: 1.75rem; font-weight: 700; color: #fff;">-</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card" style="margin-bottom: 0;">
+                            <div style="display: flex; align-items: center; gap: 1rem;">
+                                <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(168, 85, 247, 0.15); display: flex; align-items: center; justify-content: center;">
+                                    <i class="fas fa-chart-bar" style="color: #a855f7; font-size: 1.25rem;"></i>
+                                </div>
+                                <div>
+                                    <div style="font-size: 0.85rem; color: #9ca3af;">Avg Order Value</div>
+                                    <div id="metricsAvgOrderValue" style="font-size: 1.75rem; font-weight: 700; color: #fff;">-</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row -->
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem;">
+                        <div class="card">
+                            <div class="card-header">
+                                <h2 class="card-title">Orders Over Time</h2>
+                            </div>
+                            <div style="height: 300px; position: relative;">
+                                <canvas id="ordersChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h2 class="card-title">Orders by Status</h2>
+                            </div>
+                            <div style="height: 300px; position: relative;">
+                                <canvas id="statusChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </section>
             </div>
         </main>
+    </div>
+
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+
+    <!-- Order Details Modal -->
+    <div class="modal" id="orderModal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2 class="modal-title" id="orderModalTitle">Order Details</h2>
+                <button class="modal-close" onclick="closeOrderModal()">×</button>
+            </div>
+            <div id="orderDetails">
+                <!-- Order details will be populated here -->
+            </div>
+            <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end; padding-top: 20px; border-top: 1px solid #333;">
+                <button type="button" class="btn" onclick="closeOrderModal()">Close</button>
+            </div>
+        </div>
     </div>
 
     <div class="modal" id="userModal">
@@ -924,6 +1203,11 @@
                 <div class="form-group">
                     <label class="form-label">Price ($)</label>
                     <input type="number" step="0.01" class="form-input" id="beatPrice" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Produced By</label>
+                    <input type="text" class="form-input" id="beatProducedBy" placeholder="e.g., Doc Rolds, Producer Name">
+                    <small style="color: #888; font-size: 0.75rem;">Producer name(s) - separate multiple with commas</small>
                 </div>
                 <div class="form-group">
                     <label class="form-label">MP3 Preview File</label>

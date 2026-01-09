@@ -1,7 +1,10 @@
 import { useCart } from '../context/CartContext';
-import { Link } from 'react-router-dom';
+import { useToast } from '../context/NotificationContext';
+import { Link, useNavigate } from 'react-router-dom';
 
 function CartDrawer() {
+  const navigate = useNavigate();
+  const toast = useToast();
   const {
     cartItems,
     isCartOpen,
@@ -11,11 +14,22 @@ function CartDrawer() {
     getCartTotal
   } = useCart();
 
+  const handleRemoveItem = (item) => {
+    removeFromCart(item.beat.id, item.license.id);
+    toast.info('Removed from Cart', `${item.beat.title} - ${item.license.name}`);
+  };
+
+  const handleClearCart = () => {
+    const count = cartItems.length;
+    clearCart();
+    toast.info('Cart Cleared', `${count} item${count > 1 ? 's' : ''} removed`);
+  };
+
   if (!isCartOpen) return null;
 
   const handleCheckout = () => {
-    // For now, alert - later integrate with Square
-    alert(`Checkout coming soon! Total: $${getCartTotal()}`);
+    setIsCartOpen(false);
+    navigate('/checkout');
   };
 
   return (
@@ -67,7 +81,7 @@ function CartDrawer() {
                 </div>
                 <button
                   className="cart-item-remove"
-                  onClick={() => removeFromCart(item.beat.id, item.license.id)}
+                  onClick={() => handleRemoveItem(item)}
                 >
                   <i className="fas fa-trash"></i>
                 </button>
@@ -87,7 +101,7 @@ function CartDrawer() {
               <i className="fas fa-credit-card"></i>
               Checkout
             </button>
-            <button className="cart-clear-btn" onClick={clearCart}>
+            <button className="cart-clear-btn" onClick={handleClearCart}>
               Clear Cart
             </button>
           </div>
