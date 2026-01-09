@@ -1,21 +1,27 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { API_URL } from '../config.js';
 import { useCart } from '../context/CartContext';
+import { useAudioPlayer } from '../context/AudioPlayerContext';
+import { useToast } from '../context/NotificationContext';
 
 function BeatsPage() {
   const [beats, setBeats] = useState([]);
-  const [currentBeatIndex, setCurrentBeatIndex] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [activeGenre, setActiveGenre] = useState('All');
-  const [volume, setVolume] = useState(0.8);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBeatForLicense, setSelectedBeatForLicense] = useState(null);
-  const audioRef = useRef(null);
 
   const { licenseTiers, addToCart, setIsCartOpen } = useCart();
+  const {
+    currentBeat,
+    isPlaying,
+    currentTime,
+    duration,
+    playBeat,
+    setQueue,
+    seekTo,
+  } = useAudioPlayer();
+  const toast = useToast();
 
   // Default beats for demo
   const defaultBeats = [
@@ -35,15 +41,26 @@ function BeatsPage() {
       .then(data => {
         if (data && data.length > 0) {
           setBeats(data);
+          // Set the queue for the audio player
+          setQueue(data);
         } else {
           setBeats(defaultBeats);
+          setQueue(defaultBeats);
         }
       })
       .catch(err => {
         console.error('Failed to fetch beats:', err);
         setBeats(defaultBeats);
+        setQueue(defaultBeats);
       });
   }, []);
+
+  // Update queue when beats change
+  useEffect(() => {
+    if (beats.length > 0) {
+      setQueue(beats);
+    }
+  }, [beats, setQueue]);
 
   const genres = ['All', ...new Set(beats.map(b => b.genre))];
 
@@ -55,94 +72,11 @@ function BeatsPage() {
     return matchesGenre && matchesSearch;
   });
 
-  const currentBeat = currentBeatIndex !== null ? beats[currentBeatIndex] : null;
-
-  // Audio event handlers
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const handleLoadedMetadata = () => setDuration(audio.duration);
-    const handleEnded = () => {
-      // Auto-play next
-      const currentFilteredIndex = filteredBeats.findIndex(b => b.id === currentBeat?.id);
-      if (currentFilteredIndex < filteredBeats.length - 1) {
-        const nextBeat = filteredBeats[currentFilteredIndex + 1];
-        const nextIndex = beats.findIndex(b => b.id === nextBeat.id);
-        setCurrentBeatIndex(nextIndex);
-      } else {
-        setIsPlaying(false);
-      }
-    };
-
-    audio.addEventListener('timeupdate', handleTimeUpdate);
-    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
-    audio.addEventListener('ended', handleEnded);
-
-    return () => {
-      audio.removeEventListener('timeupdate', handleTimeUpdate);
-      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      audio.removeEventListener('ended', handleEnded);
-    };
-  }, [currentBeatIndex, beats.length, filteredBeats, currentBeat]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    if (isPlaying && currentBeat?.audioFile) {
-      audio.play().catch(console.error);
-    } else {
-      audio.pause();
-    }
-  }, [isPlaying, currentBeat]);
-
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-    }
-  }, [volume]);
-
-  const togglePlayBeat = (beatId) => {
-    const beatIndex = beats.findIndex(b => b.id === beatId);
-    const beat = beats[beatIndex];
-
-    if (currentBeatIndex === beatIndex) {
-      // Toggle play/pause for current beat
-      if (!beat.audioFile) {
-        alert('Audio preview coming soon! Contact us to hear the full track.');
-        return;
-      }
-      setIsPlaying(!isPlaying);
-    } else {
-      // Play new beat
-      setCurrentBeatIndex(beatIndex);
-      setCurrentTime(0);
-      if (beat.audioFile) {
-        setIsPlaying(true);
-      } else {
-        alert('Audio preview coming soon! Contact us to hear the full track.');
-      }
-    }
-  };
-
-  const handleSeek = (e) => {
-    const audio = audioRef.current;
-    if (!audio || !duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const percentage = x / rect.width;
-    audio.currentTime = percentage * duration;
-  };
-
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
-
-  const progressPercentage = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   const handleLicenseClick = (beat) => {
     setSelectedBeatForLicense(beat);
@@ -150,23 +84,34 @@ function BeatsPage() {
 
   const handleAddToCart = (license) => {
     if (selectedBeatForLicense) {
-      addToCart(selectedBeatForLicense, license);
+      const added = addToCart(selectedBeatForLicense, license);
+      if (added) {
+        toast.success(
+          'Added to Cart',
+          `${selectedBeatForLicense.title} - ${license.name}`,
+          {
+            action: () => setIsCartOpen(true),
+            actionLabel: 'View Cart',
+          }
+        );
+      } else {
+        toast.warning(
+          'Already in Cart',
+          `${selectedBeatForLicense.title} with ${license.name} is already in your cart`
+        );
+      }
       setSelectedBeatForLicense(null);
       setIsCartOpen(true);
     }
   };
 
+  const handlePlayBeat = (beatId) => {
+    // Pass the full beats array so queue is set correctly
+    playBeat(beatId, beats);
+  };
+
   return (
     <div className="beats-page-v2">
-      {/* Hidden Audio Element */}
-      {currentBeat?.audioFile && (
-        <audio
-          ref={audioRef}
-          src={currentBeat.audioFile.startsWith('http') ? currentBeat.audioFile : `${API_URL.replace('/api', '')}/${currentBeat.audioFile}`}
-          preload="metadata"
-        />
-      )}
-
       {/* Hero Section */}
       <section className="beats-hero-v2">
         <div className="beats-hero-bg-v2"></div>
@@ -176,12 +121,13 @@ function BeatsPage() {
 
           {/* Search Bar */}
           <div className="beats-search-bar">
-            <i className="fas fa-search"></i>
+            <i className="fas fa-search" aria-hidden="true"></i>
             <input
               type="text"
               placeholder="Search beats by title, mood, or style..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search beats"
             />
           </div>
         </div>
@@ -189,12 +135,13 @@ function BeatsPage() {
 
       {/* Filter Bar */}
       <div className="beats-toolbar">
-        <div className="beats-genres">
+        <div className="beats-genres" role="group" aria-label="Filter beats by genre">
           {genres.map(genre => (
             <button
               key={genre}
               className={`genre-btn ${activeGenre === genre ? 'active' : ''}`}
               onClick={() => setActiveGenre(genre)}
+              aria-pressed={activeGenre === genre}
             >
               {genre}
             </button>
@@ -208,7 +155,7 @@ function BeatsPage() {
       {/* Beats List */}
       <div className="beats-list-container">
         {/* List Header */}
-        <div className="beats-list-header">
+        <div className="beats-list-header" role="row" aria-hidden="true">
           <div className="col-play">#</div>
           <div className="col-title">Title</div>
           <div className="col-time"><i className="far fa-clock"></i></div>
@@ -224,88 +171,108 @@ function BeatsPage() {
           {filteredBeats.map((beat, index) => {
             const isCurrentBeat = currentBeat?.id === beat.id;
             const isThisPlaying = isCurrentBeat && isPlaying;
+            const progress = isCurrentBeat && duration > 0 ? (currentTime / duration) * 100 : 0;
 
             return (
-              <div
-                key={beat.id}
-                className={`beat-row ${isCurrentBeat ? 'active' : ''}`}
-              >
-                {/* Play Button / Index */}
-                <div className="col-play">
-                  <button
-                    className="row-play-btn"
-                    onClick={() => togglePlayBeat(beat.id)}
-                  >
-                    {isThisPlaying ? (
-                      <i className="fas fa-pause"></i>
-                    ) : isCurrentBeat ? (
-                      <i className="fas fa-play"></i>
-                    ) : (
-                      <span className="row-index">{index + 1}</span>
-                    )}
-                  </button>
-                  {isThisPlaying && (
-                    <div className="playing-bars">
-                      <span></span><span></span><span></span>
+              <div key={beat.id} className={`beat-row-wrapper ${isCurrentBeat ? 'active' : ''}`}>
+                <div className={`beat-row ${isCurrentBeat ? 'active' : ''}`}>
+                  {/* Play Button / Index */}
+                  <div className="col-play">
+                    <button
+                      className="row-play-btn"
+                      onClick={() => handlePlayBeat(beat.id)}
+                      aria-label={isThisPlaying ? `Pause ${beat.title}` : `Play ${beat.title}`}
+                    >
+                      {isThisPlaying ? (
+                        <i className="fas fa-pause" aria-hidden="true"></i>
+                      ) : (
+                        <>
+                          <span className="row-index">{index + 1}</span>
+                          <i className="fas fa-play row-play-icon" aria-hidden="true"></i>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Title & Producer */}
+                  <div className="col-title" onClick={() => handlePlayBeat(beat.id)}>
+                    <div className="beat-artwork">
+                      {beat.coverArt ? (
+                        <img
+                          src={beat.coverArt.startsWith('http') ? beat.coverArt : `${API_URL.replace('/api', '')}${beat.coverArt}`}
+                          alt={beat.title}
+                          className="artwork-image"
+                        />
+                      ) : (
+                        <div className="artwork-placeholder" aria-hidden="true">
+                          <i className="fas fa-music"></i>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-
-                {/* Title & Producer */}
-                <div className="col-title" onClick={() => togglePlayBeat(beat.id)}>
-                  <div className="beat-artwork">
-                    {beat.coverArt ? (
-                      <img
-                        src={beat.coverArt.startsWith('http') ? beat.coverArt : `${API_URL.replace('/api', '')}${beat.coverArt}`}
-                        alt={beat.title}
-                        className="artwork-image"
-                      />
-                    ) : (
-                      <div className="artwork-placeholder">
-                        <i className="fas fa-music"></i>
-                      </div>
-                    )}
+                    <div className="beat-info">
+                      <span className="beat-title">{beat.title}</span>
+                      <span className="beat-producer">Produced by: {beat.producedBy || beat.producer || 'Doc Rolds'}</span>
+                    </div>
                   </div>
-                  <div className="beat-info">
-                    <span className="beat-title">{beat.title}</span>
-                    <span className="beat-producer">{beat.producer || 'Doc Rolds'}</span>
+
+                  {/* Duration */}
+                  <div className="col-time">
+                    {formatTime(beat.duration || 0)}
+                  </div>
+
+                  {/* BPM */}
+                  <div className="col-bpm">
+                    {beat.bpm}
+                  </div>
+
+                  {/* Key */}
+                  <div className="col-key">
+                    {beat.key}
+                  </div>
+
+                  {/* Tags */}
+                  <div className="col-tags">
+                    {beat.tags?.slice(0, 3).map((tag, i) => (
+                      <span key={i} className="beat-tag">#{tag}</span>
+                    ))}
+                  </div>
+
+                  {/* Price */}
+                  <div className="col-price">
+                    <span className="price-value">${beat.price || 50}</span>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="col-actions">
+                    <button className="license-btn" onClick={() => handleLicenseClick(beat)} aria-label={`License ${beat.title}`}>
+                      <i className="fas fa-shopping-cart" aria-hidden="true"></i>
+                      License
+                    </button>
                   </div>
                 </div>
 
-                {/* Duration */}
-                <div className="col-time">
-                  {formatTime(beat.duration || 0)}
-                </div>
-
-                {/* BPM */}
-                <div className="col-bpm">
-                  {beat.bpm}
-                </div>
-
-                {/* Key */}
-                <div className="col-key">
-                  {beat.key}
-                </div>
-
-                {/* Tags */}
-                <div className="col-tags">
-                  {beat.tags?.slice(0, 3).map((tag, i) => (
-                    <span key={i} className="beat-tag">#{tag}</span>
-                  ))}
-                </div>
-
-                {/* Price */}
-                <div className="col-price">
-                  <span className="price-value">${beat.price || 50}</span>
-                </div>
-
-                {/* Actions */}
-                <div className="col-actions">
-                  <button className="license-btn" onClick={() => handleLicenseClick(beat)}>
-                    <i className="fas fa-shopping-cart"></i>
-                    License
-                  </button>
-                </div>
+                {/* Progress Bar - only shows when this beat is current */}
+                {isCurrentBeat && (
+                  <div className="beat-row-progress-wrapper">
+                    <span className="progress-time-current">{formatTime(currentTime)}</span>
+                    <div
+                      className="beat-row-progress"
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const clickX = e.clientX - rect.left;
+                        const percent = clickX / rect.width;
+                        const newTime = percent * (duration || beat.duration || 0);
+                        seekTo(newTime);
+                      }}
+                    >
+                      <div
+                        className="beat-row-progress-fill"
+                        style={{ width: `${progress}%` }}
+                      ></div>
+                    </div>
+                    <span className="progress-time-duration">{formatTime(duration || beat.duration || 0)}</span>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -313,103 +280,22 @@ function BeatsPage() {
 
         {filteredBeats.length === 0 && (
           <div className="no-beats">
-            <i className="fas fa-search"></i>
+            <i className="fas fa-search" aria-hidden="true"></i>
             <p>No beats found matching your criteria</p>
           </div>
         )}
       </div>
 
-      {/* Fixed Bottom Player */}
-      {currentBeat && (
-        <div className="beats-player-bar">
-          {/* Progress */}
-          <div className="player-progress-bar" onClick={handleSeek}>
-            <div className="player-progress-fill" style={{ width: `${progressPercentage}%` }} />
-          </div>
-
-          <div className="player-bar-content">
-            {/* Track Info */}
-            <div className="player-track-info">
-              <div className="player-artwork">
-                {currentBeat.coverArt ? (
-                  <img
-                    src={currentBeat.coverArt.startsWith('http') ? currentBeat.coverArt : `${API_URL.replace('/api', '')}${currentBeat.coverArt}`}
-                    alt={currentBeat.title}
-                    className="player-artwork-img"
-                  />
-                ) : (
-                  <i className="fas fa-music"></i>
-                )}
-              </div>
-              <div className="player-track-text">
-                <span className="player-track-title">{currentBeat.title}</span>
-                <span className="player-track-artist">{currentBeat.producer || 'Doc Rolds'}</span>
-              </div>
-            </div>
-
-            {/* Controls */}
-            <div className="player-controls">
-              <button className="player-btn" onClick={() => {
-                const currentFilteredIndex = filteredBeats.findIndex(b => b.id === currentBeat.id);
-                if (currentFilteredIndex > 0) {
-                  const prevBeat = filteredBeats[currentFilteredIndex - 1];
-                  setCurrentBeatIndex(beats.findIndex(b => b.id === prevBeat.id));
-                }
-              }}>
-                <i className="fas fa-step-backward"></i>
-              </button>
-
-              <button className="player-btn main" onClick={() => currentBeat.audioFile ? setIsPlaying(!isPlaying) : alert('Audio preview coming soon!')}>
-                <i className={`fas ${isPlaying ? 'fa-pause' : 'fa-play'}`}></i>
-              </button>
-
-              <button className="player-btn" onClick={() => {
-                const currentFilteredIndex = filteredBeats.findIndex(b => b.id === currentBeat.id);
-                if (currentFilteredIndex < filteredBeats.length - 1) {
-                  const nextBeat = filteredBeats[currentFilteredIndex + 1];
-                  setCurrentBeatIndex(beats.findIndex(b => b.id === nextBeat.id));
-                }
-              }}>
-                <i className="fas fa-step-forward"></i>
-              </button>
-
-              <span className="player-time">
-                {formatTime(currentTime)} / {formatTime(duration || currentBeat.duration || 0)}
-              </span>
-            </div>
-
-            {/* Volume & License */}
-            <div className="player-right">
-              <div className="player-volume">
-                <i className={`fas ${volume === 0 ? 'fa-volume-mute' : 'fa-volume-up'}`}></i>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={volume}
-                  onChange={(e) => setVolume(parseFloat(e.target.value))}
-                />
-              </div>
-              <button className="player-license-btn" onClick={() => handleLicenseClick(currentBeat)}>
-                <i className="fas fa-shopping-cart"></i>
-                <span>License This Beat</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* License Selection Modal */}
       {selectedBeatForLicense && (
-        <div className="license-modal-overlay" onClick={() => setSelectedBeatForLicense(null)}>
+        <div className="license-modal-overlay" onClick={() => setSelectedBeatForLicense(null)} role="dialog" aria-modal="true" aria-labelledby="license-modal-title">
           <div className="license-modal" onClick={e => e.stopPropagation()}>
             <div className="license-modal-header">
-              <h3>
+              <h3 id="license-modal-title">
                 Select License for <span>"{selectedBeatForLicense.title}"</span>
               </h3>
-              <button className="license-modal-close" onClick={() => setSelectedBeatForLicense(null)}>
-                <i className="fas fa-times"></i>
+              <button className="license-modal-close" onClick={() => setSelectedBeatForLicense(null)} aria-label="Close license selection">
+                <i className="fas fa-times" aria-hidden="true"></i>
               </button>
             </div>
 
@@ -426,7 +312,7 @@ function BeatsPage() {
                   <ul className="license-features">
                     {license.features.map((feature, idx) => (
                       <li key={idx}>
-                        <i className="fas fa-check"></i>
+                        <i className="fas fa-check" aria-hidden="true"></i>
                         {feature}
                       </li>
                     ))}
@@ -435,8 +321,9 @@ function BeatsPage() {
                     <button
                       className="license-add-btn"
                       onClick={() => handleAddToCart(license)}
+                      aria-label={`Add ${license.name} license to cart`}
                     >
-                      <i className="fas fa-cart-plus"></i> Add to Cart
+                      <i className="fas fa-cart-plus" aria-hidden="true"></i> Add to Cart
                     </button>
                   ) : (
                     <Link
@@ -444,7 +331,7 @@ function BeatsPage() {
                       className="license-add-btn contact"
                       onClick={() => setSelectedBeatForLicense(null)}
                     >
-                      <i className="fas fa-envelope"></i> Contact Us
+                      <i className="fas fa-envelope" aria-hidden="true"></i> Contact Us
                     </Link>
                   )}
                 </div>
