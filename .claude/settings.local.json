@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(taskkill:*)",
+      "Bash(npm run dev:*)",
+      "Bash(curl:*)",
+      "Bash(find:*)",
+      "Bash(npm run build:*)",
+      "Bash(timeout:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(tasklist:*)",
+      "Bash(cat:*)",
+      "Bash(npx prisma migrate:*)",
+      "Bash(npx prisma generate:*)",
+      "Bash(npm start)",
+      "Bash(powershell -Command \"Stop-Process -Id 73052 -Force\")",
+      "Bash(powershell:*)"
+    ]
+  }
+}

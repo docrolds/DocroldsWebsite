@@ -4,3 +4,8 @@ dist/
 .DS_Store
 *.swp
 *.swo
+
+# Track env files for deployment (they only contain public keys)
+!.env.development
+!.env.production
+!.env.staging

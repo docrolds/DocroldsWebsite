@@ -746,9 +746,9 @@ app.post('/api/beats', authenticateToken, uploadBeats.fields([
     { name: 'coverArt', maxCount: 1 }
 ]), async (req, res) => {
     try {
-        const { title, genre, category, bpm, key, duration, price, producedBy } = req.body;
+        const { title, genre, category, bpm, key, duration, price, producedBy, soldExclusively, soldExclusivelyTo } = req.body;
 
-        console.log('[BEAT CREATE] Received data:', { title, genre, category, bpm, key, duration, price, producedBy });
+        console.log('[BEAT CREATE] Received data:', { title, genre, category, bpm, key, duration, price, producedBy, soldExclusively, soldExclusivelyTo });
 
         let audioFile = null;
         let wavFile = null;
@@ -786,6 +786,8 @@ app.post('/api/beats', authenticateToken, uploadBeats.fields([
             }
         }
 
+        const isSoldExclusively = soldExclusively === 'true' || soldExclusively === true;
+
         const newBeat = await prisma.beat.create({
             data: {
                 title,
@@ -798,7 +800,10 @@ app.post('/api/beats', authenticateToken, uploadBeats.fields([
                 producedBy: producedBy && producedBy.trim() ? producedBy.trim() : null,
                 audioFile,
                 wavFile,
-                coverArt
+                coverArt,
+                soldExclusively: isSoldExclusively,
+                soldExclusivelyAt: isSoldExclusively ? new Date() : null,
+                soldExclusivelyTo: isSoldExclusively && soldExclusivelyTo ? soldExclusivelyTo.trim() : null
             }
         });
 
@@ -815,9 +820,9 @@ app.put('/api/beats/:id', authenticateToken, uploadBeats.fields([
     { name: 'coverArt', maxCount: 1 }
 ]), async (req, res) => {
     try {
-        const { title, genre, category, bpm, key, duration, price, producedBy } = req.body;
+        const { title, genre, category, bpm, key, duration, price, producedBy, soldExclusively, soldExclusivelyTo } = req.body;
 
-        console.log('[BEAT UPDATE] Received data:', { title, genre, category, bpm, key, duration, price, producedBy });
+        console.log('[BEAT UPDATE] Received data:', { title, genre, category, bpm, key, duration, price, producedBy, soldExclusively, soldExclusivelyTo });
 
         const beat = await prisma.beat.findUnique({
             where: { id: req.params.id }
@@ -826,6 +831,9 @@ app.put('/api/beats/:id', authenticateToken, uploadBeats.fields([
         if (!beat) {
             return res.status(404).json({ message: 'Beat not found' });
         }
+
+        const isSoldExclusively = soldExclusively === 'true' || soldExclusively === true;
+        const wasSoldExclusively = beat.soldExclusively;
 
         const updateData = {
             ...(title && { title }),
@@ -836,7 +844,11 @@ app.put('/api/beats/:id', authenticateToken, uploadBeats.fields([
             ...(duration && { duration: parseInt(duration) }),
             ...(price && { price: parseFloat(price) }),
             // Handle producedBy - allow empty string to clear, keep existing if undefined
-            producedBy: producedBy !== undefined ? (producedBy.trim() || null) : beat.producedBy
+            producedBy: producedBy !== undefined ? (producedBy.trim() || null) : beat.producedBy,
+            // Handle soldExclusively fields
+            soldExclusively: isSoldExclusively,
+            soldExclusivelyAt: isSoldExclusively && !wasSoldExclusively ? new Date() : (isSoldExclusively ? beat.soldExclusivelyAt : null),
+            soldExclusivelyTo: isSoldExclusively ? (soldExclusivelyTo?.trim() || beat.soldExclusivelyTo) : null
         };
 
         console.log('[BEAT UPDATE] Update data:', updateData);
@@ -1262,10 +1274,15 @@ async function handleExpiredSession(session) {
 async function sendDownloadEmail(order) {
     const downloadUrl = `${FRONTEND_URL}/download/${order.downloadToken}`;
 
+    const licenseUrl = `${FRONTEND_URL}/licenses`;
     const itemsList = order.items.map(item => `
         <tr>
             <td style="padding: 10px; border-bottom: 1px solid #eee;">${escapeHtml(item.beat.title)}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #eee;">${escapeHtml(item.licenseName)}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #eee;">
+                <a href="${licenseUrl}?type=${item.licenseType?.toLowerCase() || 'standard'}" style="color: #E83628; text-decoration: none;">
+                    ${escapeHtml(item.licenseName)} ↗
+                </a>
+            </td>
             <td style="padding: 10px; border-bottom: 1px solid #eee;">$${item.price.toFixed(2)}</td>
         </tr>
     `).join('');
@@ -1316,6 +1333,19 @@ async function sendDownloadEmail(order) {
                 <p style="color: #999; font-size: 12px; margin-top: 30px; text-align: center;">
                     If the button doesn't work, copy this link: ${downloadUrl}
                 </p>
+
+                <div style="background: #222; border-radius: 8px; padding: 20px; margin-top: 30px;">
+                    <h3 style="color: #E83628; margin: 0 0 15px 0; font-size: 14px;">📜 License Terms - IMPORTANT</h3>
+                    <ul style="color: #ccc; font-size: 12px; margin: 0; padding-left: 20px; line-height: 1.8;">
+                        <li><strong>Credit Required:</strong> You MUST credit "Prod. by Doc Rolds" on ALL releases</li>
+                        <li><strong>Master Rights:</strong> Producer retains master ownership on all license types</li>
+                        <li><strong>All Versions:</strong> Credit required on remixes, edits, and live performances</li>
+                        <li>All licenses are perpetual (lifetime validity)</li>
+                    </ul>
+                    <p style="margin: 15px 0 0; text-align: center;">
+                        <a href="${FRONTEND_URL}/licenses" style="color: #E83628; font-size: 12px;">View Full License Terms →</a>
+                    </p>
+                </div>
 
                 <hr style="border: none; border-top: 1px solid #333; margin: 30px 0;">
 

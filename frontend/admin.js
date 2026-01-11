@@ -240,9 +240,10 @@ async function loadBeats() {
         tbody.innerHTML = validBeats.map(beat => {
             const hasAudio = beat.audioFile ? true : false;
             const audioUrl = beat.audioFile ? `${API_URL.replace('/api', '')}${beat.audioFile}` : '';
+            const soldBadge = beat.soldExclusively ? '<span class="badge-sold" style="margin-left: 8px;">SOLD</span>' : '';
 
             return `
-            <tr>
+            <tr${beat.soldExclusively ? ' style="opacity: 0.7; background: rgba(232, 54, 40, 0.05);"' : ''}>
                 <td style="min-width: 280px;">
                     <div style="display: flex; align-items: center; gap: 10px;">
                         <button class="action-btn beat-play-btn"
@@ -253,7 +254,7 @@ async function loadBeats() {
                             <i class="fas fa-play" id="play-icon-${beat.id}"></i>
                         </button>
                         <div style="flex: 1; min-width: 0;">
-                            <div style="font-weight: 500; margin-bottom: 4px;">${beat.title || '-'}</div>
+                            <div style="font-weight: 500; margin-bottom: 4px;">${beat.title || '-'}${soldBadge}</div>
                             <div class="beat-progress-container" id="progress-container-${beat.id}" style="display: none;">
                                 <div class="beat-progress-bar" onclick="seekBeat(event, '${beat.id}')">
                                     <div class="beat-progress-fill" id="progress-fill-${beat.id}"></div>
@@ -395,8 +396,16 @@ function openAddBeatModal() {
     document.getElementById('beatModalTitle').textContent = 'Add Beat';
     document.getElementById('beatForm').reset();
     document.getElementById('beatId').value = '';
+    document.getElementById('beatSoldExclusively').checked = false;
+    document.getElementById('beatSoldExclusivelyTo').value = '';
+    document.getElementById('soldExclusivelyToGroup').style.display = 'none';
     document.getElementById('beatModal').classList.add('show');
 }
+
+// Toggle visibility of "Sold To" field when checkbox changes
+document.getElementById('beatSoldExclusively')?.addEventListener('change', function() {
+    document.getElementById('soldExclusivelyToGroup').style.display = this.checked ? 'block' : 'none';
+});
 
 function closeBeatModal() {
     document.getElementById('beatModal').classList.remove('show');
@@ -407,7 +416,7 @@ async function editBeat(beatId) {
         const response = await fetch(`${API_URL}/beats`);
         const beats = await response.json();
         const beat = beats.find(b => String(b.id) === String(beatId));
-        
+
         if (beat) {
             currentEditBeatId = beatId;
             document.getElementById('beatModalTitle').textContent = 'Edit Beat';
@@ -420,6 +429,9 @@ async function editBeat(beatId) {
             document.getElementById('beatDuration').value = beat.duration;
             document.getElementById('beatPrice').value = beat.price;
             document.getElementById('beatProducedBy').value = beat.producedBy || '';
+            document.getElementById('beatSoldExclusively').checked = beat.soldExclusively || false;
+            document.getElementById('beatSoldExclusivelyTo').value = beat.soldExclusivelyTo || '';
+            document.getElementById('soldExclusivelyToGroup').style.display = beat.soldExclusively ? 'block' : 'none';
             document.getElementById('beatModal').classList.add('show');
         }
     } catch (error) {
@@ -474,6 +486,8 @@ document.getElementById('beatForm').addEventListener('submit', async (e) => {
     formData.append('duration', document.getElementById('beatDuration').value);
     formData.append('price', document.getElementById('beatPrice').value);
     formData.append('producedBy', producedByValue);
+    formData.append('soldExclusively', document.getElementById('beatSoldExclusively').checked ? 'true' : 'false');
+    formData.append('soldExclusivelyTo', document.getElementById('beatSoldExclusivelyTo').value || '');
 
     // Debug: Log all form data
     console.log('[BEAT FORM] FormData entries:');

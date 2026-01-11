@@ -1,6 +1,10 @@
 node_modules/
 .env
 .env.local
+.env.production
 data.json
 uploads/
 .DS_Store
+
+# Keep example files tracked
+!.env.example

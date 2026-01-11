@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { API_URL } from '../config.js';
+import { useScrollAnimation } from '../hooks/useScrollAnimation';
 
 function Videos() {
+  const { ref: sectionRef, isVisible: sectionVisible } = useScrollAnimation({ threshold: 0.1, rootMargin: '0px' });
   const [videosContent, setVideosContent] = useState({
     videoIds: [
       { id: 'ot8ujvHU7J4' },
@@ -11,56 +13,79 @@ function Videos() {
     ]
   });
   const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem('adminToken');
     setIsAdmin(!!token);
-    
+
     fetch(`${API_URL}/content`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to load videos');
+        return res.json();
+      })
       .then(data => {
         if (data?.videos) {
           setVideosContent(data.videos);
         }
+        setLoading(false);
       })
-      .catch(err => console.error('Failed to fetch videos content:', err));
+      .catch(err => {
+        console.error('Failed to fetch videos content:', err);
+        setError(err.message);
+        setLoading(false);
+      });
   }, []);
 
+  // Loading state
+  if (loading) {
+    return (
+      <section id="videos" ref={sectionRef}>
+        <h2 className={`section-title animate-on-scroll fade-up ${sectionVisible ? 'visible' : ''}`}>Featured Videos</h2>
+        <div className="videos-container">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="video-card">
+              <div className="video-wrapper skeleton" style={{ background: 'var(--muted)', borderRadius: 'var(--radius)' }}></div>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  // Error state (still show default videos)
+  if (error) {
+    console.warn('Videos: Using default content due to error:', error);
+  }
+
   return (
-    <section id="videos" style={{ position: 'relative' }}>
+    <section id="videos" ref={sectionRef} style={{ position: 'relative' }}>
       {isAdmin && (
         <button
           onClick={() => alert('Videos editing coming soon')}
-          style={{
-            position: 'absolute',
-            top: '1rem',
-            right: '1rem',
-            background: '#E83628',
-            color: 'white',
-            border: 'none',
-            width: '40px',
-            height: '40px',
-            borderRadius: '50%',
-            cursor: 'pointer',
-            fontSize: '1.2rem',
-            zIndex: 10,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
+          className="admin-edit-btn"
+          aria-label="Edit Videos section"
         >
-          ✏️
+          <span aria-hidden="true">✏️</span>
         </button>
       )}
-      
-      <h2 className="section-title">Featured Videos</h2>
-      <div className="videos-container">
+
+      <h2 className={`section-title animate-on-scroll fade-up ${sectionVisible ? 'visible' : ''}`}>Featured Videos</h2>
+      <div
+        className={`videos-container animate-on-scroll fade-up ${sectionVisible ? 'visible' : ''}`}
+      >
         {videosContent.videoIds.map((video, index) => (
-          <div key={index} className="video-card">
+          <div
+            key={video.id}
+            className="video-card"
+          >
             <div className="video-wrapper">
-              <iframe 
+              <iframe
                 src={`https://www.youtube.com/embed/${video.id}${video.start ? `?start=${video.start}` : ''}`}
+                title={`Featured video ${index + 1}`}
                 allowFullScreen
+                loading="lazy"
               ></iframe>
             </div>
           </div>
