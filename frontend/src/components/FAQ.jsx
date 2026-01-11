@@ -1,6 +1,9 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useScrollAnimation } from '../hooks/useScrollAnimation';
 
 function FAQ() {
+  const { ref: sectionRef, isVisible: sectionVisible } = useScrollAnimation({ threshold: 0.1 });
   const [expandedItems, setExpandedItems] = useState(new Set());
 
   const faqCategories = [
@@ -99,98 +102,38 @@ function FAQ() {
   };
 
   return (
-    <section id="faq" style={{ margin: '4rem 0', position: 'relative' }}>
-      <h2 className="section-title">Frequently Asked Questions</h2>
-      
-      <div style={{ maxWidth: '900px', margin: '0 auto', padding: '0 2rem' }}>
-        {faqCategories.map((categoryGroup, catIndex) => (
-          <div key={catIndex} style={{ marginBottom: '3rem' }}>
-            <h3 style={{
-              color: '#E83628',
-              fontSize: '1.2rem',
-              fontWeight: '600',
-              textTransform: 'uppercase',
-              letterSpacing: '1px',
-              marginBottom: '1.5rem',
-              paddingBottom: '1rem',
-              borderBottom: '2px solid rgba(232, 54, 40, 0.3)'
-            }}>
-              {categoryGroup.category}
-            </h3>
+    <section id="faq" ref={sectionRef} className="faq-section">
+      <h2 className={`section-title animate-on-scroll fade-up ${sectionVisible ? 'visible' : ''}`}>
+        Frequently Asked Questions
+      </h2>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div className="faq-container">
+        {faqCategories.map((categoryGroup, catIndex) => (
+          <div
+            key={catIndex}
+            className={`faq-category animate-on-scroll fade-up ${sectionVisible ? 'visible' : ''}`}
+            style={{ transitionDelay: `${catIndex * 150}ms` }}
+          >
+            <h3 className="faq-category-title">{categoryGroup.category}</h3>
+
+            <div className="faq-list">
               {categoryGroup.questions.map((item) => (
-                <div
-                  key={item.id}
-                  style={{
-                    background: 'rgba(26, 31, 38, 0.6)',
-                    border: '1px solid rgba(232, 54, 40, 0.2)',
-                    borderRadius: '8px',
-                    overflow: 'hidden',
-                    transition: 'all 0.3s ease'
-                  }}
-                >
+                <div key={item.id} className="faq-item">
                   <button
                     onClick={() => toggleExpand(item.id)}
-                    style={{
-                      width: '100%',
-                      padding: '1.5rem',
-                      background: expandedItems.has(item.id) 
-                        ? 'rgba(232, 54, 40, 0.1)' 
-                        : 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      transition: 'all 0.3s ease'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!expandedItems.has(item.id)) {
-                        e.currentTarget.style.background = 'rgba(232, 54, 40, 0.05)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!expandedItems.has(item.id)) {
-                        e.currentTarget.style.background = 'transparent';
-                      }
-                    }}
+                    className={`faq-question-btn ${expandedItems.has(item.id) ? 'expanded' : ''}`}
+                    aria-expanded={expandedItems.has(item.id)}
+                    aria-controls={`faq-answer-${item.id}`}
                   >
-                    <span style={{
-                      color: '#e0e0e0',
-                      fontSize: '1rem',
-                      fontWeight: '500',
-                      textAlign: 'left',
-                      flex: 1
-                    }}>
-                      {item.question}
-                    </span>
-                    <span style={{
-                      color: '#E83628',
-                      fontSize: '1.3rem',
-                      marginLeft: '1rem',
-                      transition: 'transform 0.3s ease',
-                      transform: expandedItems.has(item.id) ? 'rotate(180deg)' : 'rotate(0deg)',
-                      flexShrink: 0
-                    }}>
+                    <span className="faq-question-text">{item.question}</span>
+                    <span className={`faq-chevron ${expandedItems.has(item.id) ? 'expanded' : ''}`} aria-hidden="true">
                       ▼
                     </span>
                   </button>
 
                   {expandedItems.has(item.id) && (
-                    <div style={{
-                      padding: '0 1.5rem 1.5rem 1.5rem',
-                      borderTop: '1px solid rgba(232, 54, 40, 0.2)',
-                      animation: 'slideDown 0.3s ease'
-                    }}>
-                      <p style={{
-                        color: '#aaa',
-                        fontSize: '0.95rem',
-                        lineHeight: '1.8',
-                        margin: '0'
-                      }}>
-                        {item.answer}
-                      </p>
+                    <div id={`faq-answer-${item.id}`} className="faq-answer" role="region">
+                      <p className="faq-answer-text">{item.answer}</p>
                     </div>
                   )}
                 </div>
@@ -199,61 +142,15 @@ function FAQ() {
           </div>
         ))}
 
-        <div style={{
-          background: 'rgba(232, 54, 40, 0.1)',
-          border: '1px solid rgba(232, 54, 40, 0.3)',
-          borderRadius: '8px',
-          padding: '2rem',
-          textAlign: 'center',
-          marginTop: '3rem'
-        }}>
-          <p style={{
-            color: '#ccc',
-            fontSize: '0.95rem',
-            lineHeight: '1.8',
-            marginBottom: '1.5rem'
-          }}>
+        <div className="faq-cta">
+          <p className="faq-cta-text">
             Can't find the answer you're looking for? Reach out to our team directly!
           </p>
-          <a
-            href="#"
-            style={{
-              display: 'inline-block',
-              padding: '0.8rem 2rem',
-              background: '#E83628',
-              color: 'white',
-              textDecoration: 'none',
-              borderRadius: '6px',
-              fontWeight: '600',
-              transition: 'all 0.3s',
-              cursor: 'pointer'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(232, 54, 40, 0.4)';
-              e.currentTarget.style.transform = 'translateY(-2px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.boxShadow = 'none';
-              e.currentTarget.style.transform = 'translateY(0)';
-            }}
-          >
+          <Link to="/contact" className="faq-contact-btn">
             Contact Us
-          </a>
+          </Link>
         </div>
       </div>
-
-      <style>{`
-        @keyframes slideDown {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      `}</style>
     </section>
   );
 }

@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
 import { API_URL } from '../config.js';
+import { useScrollAnimation, useStaggerAnimation } from '../hooks/useScrollAnimation';
 
 function Discord() {
+  const { ref: sectionRef, isVisible: sectionVisible } = useScrollAnimation({ threshold: 0.1 });
+  const { containerRef: statsRef, isVisible: statsVisible } = useStaggerAnimation({ threshold: 0.2 });
+  const { containerRef: channelsRef, isVisible: channelsVisible } = useStaggerAnimation({ threshold: 0.1 });
   const [discordContent, setDiscordContent] = useState({
     description: 'Connect with the Doc Rolds community and unlock exclusive opportunities. Get early access to beats, direct support, and collaborate with producers worldwide.',
     discordLink: 'https://discord.gg',
@@ -55,34 +59,15 @@ function Discord() {
   };
 
   return (
-    <section id="discord" style={{ margin: '4rem 0', position: 'relative' }}>
+    <section id="discord" ref={sectionRef} className="discord-section">
       {isAdmin && !editMode && (
-        <button
-          onClick={handleEditClick}
-          style={{
-            position: 'absolute',
-            top: '1rem',
-            right: '1rem',
-            background: '#E83628',
-            color: 'white',
-            border: 'none',
-            width: '40px',
-            height: '40px',
-            borderRadius: '50%',
-            cursor: 'pointer',
-            fontSize: '1.2rem',
-            zIndex: 10,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-        >
-          ✏️
+        <button onClick={handleEditClick} className="admin-edit-btn" aria-label="Edit Discord section">
+          <span aria-hidden="true">✏️</span>
         </button>
       )}
-      
-      <h2 className="section-title">Join Our Discord Community</h2>
-      <div style={{ maxWidth: '800px', margin: '0 auto', padding: '0 2rem' }}>
+
+      <h2 className={`section-title animate-on-scroll fade-up ${sectionVisible ? 'visible' : ''}`}>Join Our Discord Community</h2>
+      <div className="discord-container">
         {editMode ? (
           <div style={{ background: 'rgba(26, 31, 38, 0.9)', padding: '2rem', borderRadius: '8px', marginBottom: '2rem' }}>
             <h3 style={{ color: '#fff', marginBottom: '1.5rem' }}>Edit Discord Section</h3>
@@ -95,7 +80,7 @@ function Discord() {
                   width: '100%',
                   padding: '0.75rem',
                   background: '#0f1419',
-                  border: '1px solid rgba(232, 54, 40, 0.3)',
+                  border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
                   borderRadius: '6px',
                   color: '#e0e0e0',
                   minHeight: '100px',
@@ -113,7 +98,7 @@ function Discord() {
                   width: '100%',
                   padding: '0.75rem',
                   background: '#0f1419',
-                  border: '1px solid rgba(232, 54, 40, 0.3)',
+                  border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
                   borderRadius: '6px',
                   color: '#e0e0e0'
                 }}
@@ -129,7 +114,7 @@ function Discord() {
                   width: '100%',
                   padding: '0.75rem',
                   background: '#0f1419',
-                  border: '1px solid rgba(232, 54, 40, 0.3)',
+                  border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
                   borderRadius: '6px',
                   color: '#e0e0e0'
                 }}
@@ -141,7 +126,7 @@ function Discord() {
                 style={{
                   flex: 1,
                   padding: '0.75rem',
-                  background: '#E83628',
+                  background: 'var(--primary)',
                   color: 'white',
                   border: 'none',
                   borderRadius: '6px',
@@ -169,25 +154,23 @@ function Discord() {
             </div>
           </div>
         ) : (
-          <p style={{ textAlign: 'center', color: '#aaa', fontSize: '1rem', marginBottom: '3rem', lineHeight: '1.8' }}>
-            {discordContent.description}
-          </p>
+          <p className="discord-description">{discordContent.description}</p>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '2rem', marginBottom: '3rem' }}>
-          <div style={{ background: 'rgba(232, 54, 40, 0.1)', padding: '2rem', borderRadius: '8px', border: '1px solid rgba(232, 54, 40, 0.2)', textAlign: 'center' }}>
-            <div style={{ background: 'linear-gradient(135deg, #E83628, #ff6b47)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>500+</div>
-            <div style={{ color: '#aaa', fontSize: '0.95rem' }}>Active Members</div>
+        <div ref={statsRef} className="discord-stats stagger-children">
+          <div className={`discord-stat-card animate-on-scroll fade-up ${statsVisible ? 'visible' : ''}`}>
+            <div className="discord-stat-number">{discordContent.stats?.activeMembers || '500+'}</div>
+            <div className="discord-stat-label">Active Members</div>
           </div>
-          <div style={{ background: 'rgba(232, 54, 40, 0.1)', padding: '2rem', borderRadius: '8px', border: '1px solid rgba(232, 54, 40, 0.2)', textAlign: 'center' }}>
-            <div style={{ background: 'linear-gradient(135deg, #E83628, #ff6b47)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>24/7</div>
-            <div style={{ color: '#aaa', fontSize: '0.95rem' }}>Community Support</div>
+          <div className={`discord-stat-card animate-on-scroll fade-up ${statsVisible ? 'visible' : ''}`} style={{ transitionDelay: '100ms' }}>
+            <div className="discord-stat-number">{discordContent.stats?.support || '24/7'}</div>
+            <div className="discord-stat-label">Community Support</div>
           </div>
         </div>
 
-        <div style={{ marginBottom: '3rem' }}>
-          <h3 style={{ color: '#E83628', fontSize: '1rem', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1.5rem', textAlign: 'center' }}>Featured Channels</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.5rem' }}>
+        <div>
+          <h3 className="discord-channels-title">Featured Channels</h3>
+          <div ref={channelsRef} className="discord-channels stagger-children">
             {[
               { icon: '🎵', title: 'Exclusive Beats', desc: 'First access to new beats and exclusive drops' },
               { icon: '🎧', title: 'Live Sessions', desc: 'Live studio sessions for mixing and mastering' },
@@ -196,17 +179,21 @@ function Discord() {
               { icon: '🛠️', title: 'Drumkits & Presets', desc: 'Exclusive drumkits, presets and templates' },
               { icon: '📚', title: 'Lessons', desc: 'Production tips, tutorials & masterclasses' }
             ].map((channel, index) => (
-              <div key={index} style={{ background: 'rgba(232, 54, 40, 0.05)', padding: '1.5rem', borderRadius: '8px', borderLeft: '4px solid #E83628' }}>
-                <div style={{ color: '#fff', fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem' }}>{channel.icon} {channel.title}</div>
-                <div style={{ color: '#999', fontSize: '0.9rem' }}>{channel.desc}</div>
+              <div
+                key={index}
+                className={`discord-channel animate-on-scroll fade-up ${channelsVisible ? 'visible' : ''}`}
+                style={{ transitionDelay: `${index * 75}ms` }}
+              >
+                <div className="discord-channel-title">{channel.icon} {channel.title}</div>
+                <div className="discord-channel-desc">{channel.desc}</div>
               </div>
             ))}
           </div>
         </div>
 
-        <div style={{ marginBottom: '3rem' }}>
-          <h3 style={{ color: '#E83628', fontSize: '1rem', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1.5rem', textAlign: 'center' }}>Member Perks</h3>
-          <ul style={{ listStyle: 'none', maxWidth: '500px', margin: '0 auto' }}>
+        <div>
+          <h3 className="discord-perks-title">Member Perks</h3>
+          <ul className="discord-perks">
             {[
               'Early access to new beats & services before release',
               'Direct messaging with Doc Rolds for feedback',
@@ -214,36 +201,21 @@ function Discord() {
               'Community challenges & contests with prizes',
               'Live production streams & monthly Q&A sessions'
             ].map((perk, index) => (
-              <li key={index} style={{ color: '#ccc', padding: '0.8rem 0', fontSize: '0.95rem', paddingLeft: '2rem', position: 'relative', lineHeight: '1.6' }}>
-                <span style={{ position: 'absolute', left: '0', color: '#E83628', fontWeight: 'bold', fontSize: '1.2rem' }}>✓</span>
-                {perk}
-              </li>
+              <li key={index} className="discord-perk">{perk}</li>
             ))}
           </ul>
         </div>
 
-        <div style={{ textAlign: 'center' }}>
-          <a 
-            href="https://discord.gg" 
-            target="_blank" 
+        <div className="discord-cta">
+          <a
+            href={discordContent.discordLink || 'https://discord.gg'}
+            target="_blank"
             rel="noopener noreferrer"
-            style={{ 
-              display: 'inline-flex', 
-              alignItems: 'center', 
-              gap: '0.8rem', 
-              padding: '1.1rem 3rem', 
-              background: 'linear-gradient(135deg, #5865F2, #4752C4)', 
-              color: 'white', 
-              textDecoration: 'none', 
-              borderRadius: '8px', 
-              fontWeight: 'bold', 
-              transition: 'all 0.3s', 
-              boxShadow: '0 4px 15px rgba(88, 101, 242, 0.3)', 
-              fontSize: '1rem' 
-            }}
+            className="discord-join-btn"
+            aria-label="Join Doc Rolds Discord community (opens in new tab)"
           >
-            <i className="fab fa-discord"></i>
-            Join Discord Now
+            <i className="fab fa-discord" aria-hidden="true"></i>
+            Join Discord
           </a>
         </div>
       </div>

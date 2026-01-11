@@ -31,6 +31,11 @@ model Beat {
   coverArt   String?
   createdAt  DateTime @default(now())
 
+  // Exclusive sale tracking
+  soldExclusively   Boolean   @default(false)
+  soldExclusivelyAt DateTime?
+  soldExclusivelyTo String?   // Customer email/name for records
+
   // Relations for payment system & social features
   orderItems    OrderItem[]
   likes         BeatLike[]

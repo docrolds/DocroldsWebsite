@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { API_URL } from '../config.js';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 function Hero() {
   const [heroContent, setHeroContent] = useState({
@@ -8,9 +10,7 @@ function Hero() {
     description: 'Professional recording studio and mixing services for artists who are serious about their craft. Book your session today and bring your music to life.',
     imageUrl: ''
   });
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  const [editForm, setEditForm] = useState({ ...heroContent });
+  const [_isAdmin, setIsAdmin] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -22,7 +22,6 @@ function Hero() {
       .then(data => {
         if (data?.hero) {
           setHeroContent(data.hero);
-          setEditForm(data.hero);
         }
       })
       .catch(err => console.error('Failed to fetch hero content:', err));
@@ -47,169 +46,66 @@ function Hero() {
   return (
     <>
       {/* Navigation */}
-      <nav style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        padding: scrolled ? '0.75rem 3rem' : '1.25rem 3rem',
-        background: scrolled ? 'rgba(0, 0, 0, 0.98)' : 'rgba(0, 0, 0, 0)',
-        backdropFilter: scrolled ? 'blur(20px)' : 'none',
-        borderBottom: scrolled ? '1px solid rgba(232, 54, 40, 0.15)' : '1px solid transparent',
-        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
+      <nav className={cn(
+        "fixed top-0 left-0 right-0 z-[1000] flex justify-between items-center transition-all duration-400",
+        scrolled
+          ? "py-3 px-12 bg-background/98 backdrop-blur-xl border-b border-primary/15"
+          : "py-5 px-12 bg-transparent border-b border-transparent"
+      )}>
         {/* Logo */}
         <a href="#home">
           <img
             src="/logo.jpg"
             alt="Doc Rolds"
-            style={{
-              height: '45px',
-              width: 'auto',
-              objectFit: 'contain',
-              borderRadius: '4px'
-            }}
+            className="h-[45px] w-auto object-contain rounded"
           />
         </a>
 
         {/* Nav Links */}
-        <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
+        <div className="flex gap-8 items-center">
           {navLinks.map(link => (
             <a
               key={link.name}
               href={link.href}
-              style={{
-                color: '#ffffff',
-                textDecoration: 'none',
-                fontSize: '0.85rem',
-                fontWeight: '500',
-                letterSpacing: '0.5px',
-                textTransform: 'uppercase',
-                transition: 'color 0.2s ease'
-              }}
-              onMouseEnter={e => e.target.style.color = '#E83628'}
-              onMouseLeave={e => e.target.style.color = '#ffffff'}
+              className="text-white text-sm font-medium tracking-wide uppercase transition-colors duration-200 no-underline hover:text-primary"
             >
               {link.name}
             </a>
           ))}
-          <button
-            onClick={handleBookNow}
-            style={{
-              background: '#E83628',
-              color: 'white',
-              border: 'none',
-              padding: '0.6rem 1.5rem',
-              borderRadius: '4px',
-              fontSize: '0.85rem',
-              fontWeight: '600',
-              cursor: 'pointer',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              transition: 'all 0.2s ease'
-            }}
-            onMouseEnter={e => {
-              e.target.style.background = '#c42d22';
-            }}
-            onMouseLeave={e => {
-              e.target.style.background = '#E83628';
-            }}
-          >
+          <Button onClick={handleBookNow} size="sm" className="uppercase tracking-wide">
             Book Now
-          </button>
+          </Button>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section id="home" style={{
-        position: 'relative',
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden'
-      }}>
+      <section id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden">
         {/* Background Image */}
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundImage: 'url("/studio-hero.jpg")',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          filter: 'brightness(0.55)'
-        }} />
+        <div
+          className="absolute inset-0 bg-cover bg-center brightness-[0.55]"
+          style={{ backgroundImage: 'url("/studio-hero.jpg")' }}
+        />
 
         {/* Gradient Overlay */}
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.5) 100%)'
-        }} />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/50" />
 
         {/* Content */}
-        <div
-          style={{
-            position: 'relative',
-            zIndex: 2,
-            textAlign: 'center',
-            maxWidth: '900px',
-            margin: '0 auto',
-            padding: '0 2rem'
-          }}
-        >
+        <div className="relative z-[2] text-center max-w-[900px] mx-auto px-8">
           {/* Tagline */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '1.5rem',
-            marginBottom: '2rem'
-          }}>
-            <div style={{
-              width: '60px',
-              height: '1px',
-              background: 'linear-gradient(to right, transparent, #E83628)'
-            }} />
-            <span style={{
-              color: '#ffffff',
-              fontSize: 'clamp(1rem, 2vw, 1.25rem)',
-              fontWeight: '300',
-              letterSpacing: '0.3em',
-              textTransform: 'uppercase'
-            }}>
+          <div className="flex items-center justify-center gap-6 mb-8">
+            <div className="w-[60px] h-px bg-gradient-to-r from-transparent to-primary" />
+            <span className="text-white text-[clamp(1rem,2vw,1.25rem)] font-light tracking-[0.3em] uppercase">
               {heroContent.tagline}
             </span>
-            <div style={{
-              width: '60px',
-              height: '1px',
-              background: 'linear-gradient(to left, transparent, #E83628)'
-            }} />
+            <div className="w-[60px] h-px bg-gradient-to-l from-transparent to-primary" />
           </div>
 
           {/* Title */}
-          <h1 style={{
-            fontSize: 'clamp(2rem, 4.5vw, 3.5rem)',
-            fontWeight: '700',
-            lineHeight: '1.2',
-            marginBottom: '1.25rem',
-            color: '#ffffff'
-          }}>
+          <h1 className="text-[clamp(2rem,4.5vw,3.5rem)] font-bold leading-tight mb-5 text-white">
             {heroContent.title.split(' ').map((word, i) => (
               <span
                 key={i}
-                style={{
-                  color: word.toLowerCase() === 'dream' ? '#E83628' : '#ffffff'
-                }}
+                className={word.toLowerCase() === 'dream' ? 'text-primary' : 'text-white'}
               >
                 {word}{' '}
               </span>
@@ -217,99 +113,44 @@ function Hero() {
           </h1>
 
           {/* Description */}
-          <p style={{
-            fontSize: '1.05rem',
-            lineHeight: '1.7',
-            color: 'rgba(255,255,255,0.7)',
-            maxWidth: '600px',
-            margin: '0 auto 2rem'
-          }}>
+          <p className="text-lg leading-relaxed text-white/70 max-w-[600px] mx-auto mb-8">
             {heroContent.description}
           </p>
 
           {/* Buttons */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '3rem' }}>
-            <button
-              onClick={handleBookNow}
-              style={{
-                background: '#E83628',
-                color: 'white',
-                border: 'none',
-                padding: '1rem 2rem',
-                borderRadius: '4px',
-                fontSize: '0.95rem',
-                fontWeight: '600',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                transition: 'all 0.2s ease'
-              }}
-              onMouseEnter={e => e.target.style.background = '#c42d22'}
-              onMouseLeave={e => e.target.style.background = '#E83628'}
-            >
+          <div className="flex justify-center gap-4 flex-wrap mb-12">
+            <Button onClick={handleBookNow} size="lg">
               Book a Session →
-            </button>
+            </Button>
 
-            <a
-              href="https://open.spotify.com/playlist/6lQ3qQ34fxkf8roPLdbMYH?si=089e5d2c0b404e58"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                background: 'transparent',
-                color: 'white',
-                border: '1px solid rgba(255,255,255,0.3)',
-                padding: '1rem 2rem',
-                borderRadius: '4px',
-                fontSize: '0.95rem',
-                fontWeight: '600',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                transition: 'all 0.2s ease',
-                textDecoration: 'none'
-              }}
-              onMouseEnter={e => {
-                e.target.style.background = 'rgba(255,255,255,0.1)';
-                e.target.style.borderColor = 'rgba(255,255,255,0.5)';
-              }}
-              onMouseLeave={e => {
-                e.target.style.background = 'transparent';
-                e.target.style.borderColor = 'rgba(255,255,255,0.3)';
-              }}
+            <Button
+              variant="outline"
+              size="lg"
+              asChild
+              className="border-white/30 text-white hover:bg-white/10 hover:border-white/50 hover:text-white"
             >
-              ▶ View My Work
-            </a>
+              <a
+                href="https://open.spotify.com/playlist/6lQ3qQ34fxkf8roPLdbMYH?si=089e5d2c0b404e58"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                ▶ View My Work
+              </a>
+            </Button>
           </div>
 
           {/* Stats */}
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            gap: '3rem',
-            paddingTop: '2rem',
-            borderTop: '1px solid rgba(255,255,255,0.1)'
-          }}>
+          <div className="flex justify-center gap-12 pt-8 border-t border-white/10">
             {[
               { number: '500+', label: 'Sessions' },
               { number: '50+', label: 'Artists' },
               { number: '10+', label: 'Years' }
             ].map((stat, i) => (
-              <div key={i} style={{ textAlign: 'center' }}>
-                <div style={{
-                  fontSize: '1.75rem',
-                  fontWeight: '700',
-                  color: '#ffffff'
-                }}>
+              <div key={i} className="text-center">
+                <div className="text-3xl font-bold text-white">
                   {stat.number}
                 </div>
-                <div style={{
-                  color: 'rgba(255,255,255,0.5)',
-                  fontSize: '0.8rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px'
-                }}>
+                <div className="text-white/50 text-xs uppercase tracking-wider">
                   {stat.label}
                 </div>
               </div>

@@ -23,6 +23,7 @@ import DownloadPage from './pages/DownloadPage';
 import CustomerLoginPage from './pages/CustomerLoginPage';
 import CustomerRegisterPage from './pages/CustomerRegisterPage';
 import CustomerDashboard from './pages/CustomerDashboard';
+import LicenseAgreementPage from './pages/LicenseAgreementPage';
 
 function App() {
   const location = useLocation();
@@ -76,6 +77,7 @@ function App() {
                 <Route path="/login" element={<CustomerLoginPage />} />
                 <Route path="/register" element={<CustomerRegisterPage />} />
                 <Route path="/dashboard" element={<CustomerDashboard />} />
+                <Route path="/licenses" element={<LicenseAgreementPage />} />
               </Routes>
             </main>
               <Footer />

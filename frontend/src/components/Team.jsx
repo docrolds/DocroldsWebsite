@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { API_URL } from '../config.js';
+import { useScrollAnimation } from '../hooks/useScrollAnimation';
 
 function Team() {
+  const { ref: sectionRef, isVisible: sectionVisible } = useScrollAnimation({ threshold: 0.1 });
   const [teamMembers, setTeamMembers] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [expandedCards, setExpandedCards] = useState(new Set());
@@ -53,42 +55,29 @@ function Team() {
   const visibleMembers = teamMembers.slice(currentIndex, currentIndex + cardsPerView);
 
   return (
-    <section id="team" style={{maxWidth: '1200px', margin: '4rem auto'}}>
-      <h2 className="section-title">Meet the Team</h2>
-      <div style={{position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2rem'}}>
+    <section id="team" ref={sectionRef} className="team-carousel-section">
+      <h2 className={`section-title animate-on-scroll fade-up ${sectionVisible ? 'visible' : ''}`}>Meet the Team</h2>
+      <div
+        className={`team-carousel-wrapper animate-on-scroll fade-up ${sectionVisible ? 'visible' : ''}`}
+        style={{ transitionDelay: '150ms' }}
+      >
         <button
           onClick={handlePrev}
           disabled={currentIndex === 0}
-          style={{
-            background: currentIndex === 0 ? 'rgba(230, 54, 40, 0.3)' : 'rgba(232, 54, 40, 0.6)',
-            color: 'white',
-            border: '2px solid rgba(232, 54, 40, 0.5)',
-            borderRadius: '50%',
-            width: '40px',
-            height: '40px',
-            minWidth: '40px',
-            cursor: currentIndex === 0 ? 'not-allowed' : 'pointer',
-            fontSize: '1.2rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'all 0.3s cubic-bezier(0.23, 1, 0.320, 1)',
-            opacity: currentIndex === 0 ? 0.5 : 1
-          }}
-          onMouseEnter={(e) => currentIndex !== 0 && (e.target.style.background = '#E83628')}
-          onMouseLeave={(e) => (e.target.style.background = currentIndex === 0 ? 'rgba(230, 54, 40, 0.3)' : 'rgba(232, 54, 40, 0.6)')}
+          className={`team-carousel-btn ${currentIndex === 0 ? 'disabled' : ''}`}
+          aria-label="Previous"
         >
           ❮
         </button>
 
-        <div className="team-container" style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem', maxWidth: '1000px', width: '100%', justifyItems: 'center'}}>
+        <div className="team-carousel-grid">
           {visibleMembers.map((member) => (
-            <div key={member.id} className="team-member" style={{background: 'rgba(26, 26, 26, 0.8)', border: '1px solid rgba(232, 54, 40, 0.2)', width: '100%', maxWidth: '280px'}}>
+            <div key={member.id} className="team-member">
               <div className="team-member-avatar">
-                <img src={member.photoData || member.photoFile} alt={member.name} style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%'}} />
+                <img src={member.photoData || member.photoFile} alt={member.name} />
               </div>
               <div className="team-member-name">{member.name}</div>
-              <div className="team-member-role" style={{fontSize: '0.9rem'}}>
+              <div className="team-member-role">
                 {(() => {
                   try {
                     const roles = typeof member.role === 'string' ? JSON.parse(member.role) : (Array.isArray(member.role) ? member.role : [member.role]);
@@ -99,7 +88,7 @@ function Team() {
                 })()}
               </div>
               {member.credits && (
-                <div style={{marginTop: '8px', textAlign: 'center', fontSize: '0.85rem', color: '#ccc'}}>
+                <div className="team-member-credits">
                   {(() => {
                     try {
                       const credits = typeof member.credits === 'string' ? JSON.parse(member.credits) : member.credits;
@@ -112,27 +101,15 @@ function Team() {
                 </div>
               )}
               {member.description && (
-                <div>
+                <div className="team-member-bio-wrapper">
                   <button
                     onClick={() => toggleBio(member.id)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#E83628',
-                      cursor: 'pointer',
-                      fontSize: '1.2rem',
-                      padding: '8px',
-                      marginTop: '8px',
-                      transition: 'transform 0.3s ease',
-                      transform: expandedCards.has(member.id) ? 'rotate(180deg)' : 'rotate(0deg)'
-                    }}
+                    className={`team-bio-toggle ${expandedCards.has(member.id) ? 'expanded' : ''}`}
                   >
                     ▼
                   </button>
                   {expandedCards.has(member.id) && (
-                    <div className="team-member-bio" style={{marginTop: '8px'}}>
-                      {member.description}
-                    </div>
+                    <div className="team-member-bio">{member.description}</div>
                   )}
                 </div>
               )}
@@ -143,24 +120,8 @@ function Team() {
         <button
           onClick={handleNext}
           disabled={currentIndex + cardsPerView >= teamMembers.length}
-          style={{
-            background: currentIndex + cardsPerView >= teamMembers.length ? 'rgba(230, 54, 40, 0.3)' : 'rgba(232, 54, 40, 0.6)',
-            color: 'white',
-            border: '2px solid rgba(232, 54, 40, 0.5)',
-            borderRadius: '50%',
-            width: '40px',
-            height: '40px',
-            minWidth: '40px',
-            cursor: currentIndex + cardsPerView >= teamMembers.length ? 'not-allowed' : 'pointer',
-            fontSize: '1.2rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'all 0.3s cubic-bezier(0.23, 1, 0.320, 1)',
-            opacity: currentIndex + cardsPerView >= teamMembers.length ? 0.5 : 1
-          }}
-          onMouseEnter={(e) => currentIndex + cardsPerView < teamMembers.length && (e.target.style.background = '#E83628')}
-          onMouseLeave={(e) => (e.target.style.background = currentIndex + cardsPerView >= teamMembers.length ? 'rgba(230, 54, 40, 0.3)' : 'rgba(232, 54, 40, 0.6)')}
+          className={`team-carousel-btn ${currentIndex + cardsPerView >= teamMembers.length ? 'disabled' : ''}`}
+          aria-label="Next"
         >
           ❯
         </button>

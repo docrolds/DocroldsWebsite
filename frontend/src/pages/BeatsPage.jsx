@@ -158,7 +158,6 @@ function BeatsPage() {
         <div className="beats-list-header" role="row" aria-hidden="true">
           <div className="col-play">#</div>
           <div className="col-title">Title</div>
-          <div className="col-time"><i className="far fa-clock"></i></div>
           <div className="col-bpm">BPM</div>
           <div className="col-key">Key</div>
           <div className="col-tags">Tags</div>
@@ -208,16 +207,45 @@ function BeatsPage() {
                           <i className="fas fa-music"></i>
                         </div>
                       )}
+                      {beat.soldExclusively && (
+                        <div className="sold-badge-overlay" aria-label="This beat has been sold exclusively">
+                          SOLD
+                        </div>
+                      )}
                     </div>
                     <div className="beat-info">
-                      <span className="beat-title">{beat.title}</span>
-                      <span className="beat-producer">Produced by: {beat.producedBy || beat.producer || 'Doc Rolds'}</span>
+                      <span className="beat-title">
+                        {beat.title}
+                        {beat.soldExclusively && <span className="sold-inline-badge">SOLD</span>}
+                      </span>
+                      <span className="beat-producer">{beat.producedBy || beat.producer || 'Doc Rolds'}</span>
                     </div>
                   </div>
 
-                  {/* Duration */}
-                  <div className="col-time">
-                    {formatTime(beat.duration || 0)}
+                  {/* Progress Bar - in middle */}
+                  <div className="col-progress">
+                    {isCurrentBeat ? (
+                      <div className="middle-progress-wrapper">
+                        <span className="progress-time-small">{formatTime(currentTime)}</span>
+                        <div
+                          className="middle-progress-bar"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const clickX = e.clientX - rect.left;
+                            const percent = clickX / rect.width;
+                            const newTime = percent * (duration || beat.duration || 0);
+                            seekTo(newTime);
+                          }}
+                        >
+                          <div
+                            className="middle-progress-fill"
+                            style={{ width: `${progress}%` }}
+                          ></div>
+                        </div>
+                        <span className="progress-time-small">{formatTime(duration || beat.duration || 0)}</span>
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* BPM */}
@@ -230,13 +258,6 @@ function BeatsPage() {
                     {beat.key}
                   </div>
 
-                  {/* Tags */}
-                  <div className="col-tags">
-                    {beat.tags?.slice(0, 3).map((tag, i) => (
-                      <span key={i} className="beat-tag">#{tag}</span>
-                    ))}
-                  </div>
-
                   {/* Price */}
                   <div className="col-price">
                     <span className="price-value">${beat.price || 50}</span>
@@ -244,35 +265,19 @@ function BeatsPage() {
 
                   {/* Actions */}
                   <div className="col-actions">
-                    <button className="license-btn" onClick={() => handleLicenseClick(beat)} aria-label={`License ${beat.title}`}>
-                      <i className="fas fa-shopping-cart" aria-hidden="true"></i>
-                      License
-                    </button>
+                    {beat.soldExclusively ? (
+                      <span className="license-btn sold" aria-label="This beat has been sold exclusively">
+                        <i className="fas fa-check-circle" aria-hidden="true"></i>
+                        Sold
+                      </span>
+                    ) : (
+                      <button className="license-btn" onClick={() => handleLicenseClick(beat)} aria-label={`License ${beat.title}`}>
+                        <i className="fas fa-shopping-cart" aria-hidden="true"></i>
+                        License
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                {/* Progress Bar - only shows when this beat is current */}
-                {isCurrentBeat && (
-                  <div className="beat-row-progress-wrapper">
-                    <span className="progress-time-current">{formatTime(currentTime)}</span>
-                    <div
-                      className="beat-row-progress"
-                      onClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const clickX = e.clientX - rect.left;
-                        const percent = clickX / rect.width;
-                        const newTime = percent * (duration || beat.duration || 0);
-                        seekTo(newTime);
-                      }}
-                    >
-                      <div
-                        className="beat-row-progress-fill"
-                        style={{ width: `${progress}%` }}
-                      ></div>
-                    </div>
-                    <span className="progress-time-duration">{formatTime(duration || beat.duration || 0)}</span>
-                  </div>
-                )}
               </div>
             );
           })}
@@ -334,6 +339,13 @@ function BeatsPage() {
                       <i className="fas fa-envelope" aria-hidden="true"></i> Contact Us
                     </Link>
                   )}
+                  <Link
+                    to={`/licenses?type=${license.id}`}
+                    className="license-terms-link"
+                    onClick={() => setSelectedBeatForLicense(null)}
+                  >
+                    View Full Terms <i className="fas fa-external-link-alt" aria-hidden="true"></i>
+                  </Link>
                 </div>
               ))}
             </div>

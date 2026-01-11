@@ -3,7 +3,23 @@ import { createContext, useContext, useState, useEffect } from 'react';
 const CartContext = createContext();
 
 export function useCart() {
-  return useContext(CartContext);
+  const context = useContext(CartContext);
+  if (!context) {
+    console.warn('useCart called outside of CartProvider, returning fallback');
+    return {
+      cartItems: [],
+      cartCount: 0,
+      isCartOpen: false,
+      setIsCartOpen: () => {},
+      licenseTiers: [],
+      addToCart: () => false,
+      removeFromCart: () => {},
+      clearCart: () => {},
+      isInCart: () => false,
+      getCartTotal: () => 0,
+    };
+  }
+  return context;
 }
 
 export function CartProvider({ children }) {
@@ -25,10 +41,13 @@ export function CartProvider({ children }) {
       name: 'Standard Lease',
       price: 50,
       features: [
-        'MP3 File',
-        'Up to 2,500 Streams',
+        'MP3 File (320kbps)',
+        'Up to 100,000 Streams',
+        'Radio: Prohibited',
         'Non-Exclusive Rights',
-        'Must Credit Producer'
+        'Publishing: 50/50',
+        'Credit Required',
+        'Producer Retains Master'
       ]
     },
     {
@@ -36,11 +55,14 @@ export function CartProvider({ children }) {
       name: 'Unlimited Lease',
       price: 150,
       features: [
-        'WAV + MP3 Files',
+        'WAV + MP3 + Stems',
         'Unlimited Streams',
+        'Radio: Unlimited',
         'Non-Exclusive Rights',
-        'Untagged Beat',
-        'Radio & TV Ready'
+        'Sync Licensing Included',
+        'Publishing: 50/50',
+        'Credit Required',
+        'Producer Retains Master'
       ]
     },
     {
@@ -48,10 +70,12 @@ export function CartProvider({ children }) {
       name: 'Exclusive Rights',
       price: null, // Custom pricing
       features: [
-        'Full Ownership Transfer',
-        'WAV + MP3 + Stems',
-        'Unlimited Commercial Use',
-        'Beat Removed from Store'
+        'WAV + MP3 + Stems + Project File',
+        'Exclusive Use (Not Ownership)',
+        'Beat Removed from Store',
+        'Publishing: 50/50 (Negotiable)',
+        'Credit Required',
+        'Producer Retains Master'
       ]
     }
   ];

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { API_URL } from '../config.js';
 
 function TeamPage() {
@@ -32,11 +33,17 @@ function TeamPage() {
   };
 
   return (
-    <div className="page-container">
-      <section className="team-section">
-        <h1 className="page-title">Meet The Team</h1>
-        <p className="page-subtitle">The creative minds behind Doc Rolds Productions</p>
+    <div className="team-page-v2">
+      {/* Hero Section */}
+      <section className="team-hero-v2">
+        <div className="team-hero-bg-v2"></div>
+        <div className="team-hero-content-v2">
+          <h1>The Team</h1>
+          <p>The producers, engineers, and creatives shaping the sound</p>
+        </div>
+      </section>
 
+      <section className="team-section">
         {teamMembers.length > 0 ? (
           <div className="team-grid">
             {teamMembers.map((member) => {
@@ -73,10 +80,10 @@ function TeamPage() {
                   {/* Photo */}
                   <div className="team-photo-wrapper">
                     {photoSrc ? (
-                      <img src={photoSrc} alt={member.name} className="team-photo" />
+                      <img src={photoSrc} alt={`${member.name} - ${roleDisplay}`} className="team-photo" />
                     ) : (
-                      <div className="team-photo-placeholder">
-                        <i className="fas fa-user"></i>
+                      <div className="team-photo-placeholder" aria-label={`No photo available for ${member.name}`}>
+                        <i className="fas fa-user" aria-hidden="true"></i>
                       </div>
                     )}
                   </div>
@@ -110,9 +117,11 @@ function TeamPage() {
                       <button
                         className="bio-toggle"
                         onClick={() => toggleBio(member.id)}
+                        aria-expanded={expandedBios.has(member.id)}
+                        aria-label={expandedBios.has(member.id) ? `Show less about ${member.name}` : `Read more about ${member.name}`}
                       >
                         {expandedBios.has(member.id) ? 'Show Less' : 'Read More'}
-                        <i className={`fas fa-chevron-${expandedBios.has(member.id) ? 'up' : 'down'}`}></i>
+                        <i className={`fas fa-chevron-${expandedBios.has(member.id) ? 'up' : 'down'}`} aria-hidden="true"></i>
                       </button>
                     )}
                   </div>
@@ -121,18 +130,18 @@ function TeamPage() {
                   {member.socials && (
                     <div className="team-socials">
                       {member.socials.instagram && (
-                        <a href={member.socials.instagram} target="_blank" rel="noopener noreferrer">
-                          <i className="fab fa-instagram"></i>
+                        <a href={member.socials.instagram} target="_blank" rel="noopener noreferrer" aria-label={`Follow ${member.name} on Instagram (opens in new tab)`}>
+                          <i className="fab fa-instagram" aria-hidden="true"></i>
                         </a>
                       )}
                       {member.socials.spotify && (
-                        <a href={member.socials.spotify} target="_blank" rel="noopener noreferrer">
-                          <i className="fab fa-spotify"></i>
+                        <a href={member.socials.spotify} target="_blank" rel="noopener noreferrer" aria-label={`Listen to ${member.name} on Spotify (opens in new tab)`}>
+                          <i className="fab fa-spotify" aria-hidden="true"></i>
                         </a>
                       )}
                       {member.socials.soundcloud && (
-                        <a href={member.socials.soundcloud} target="_blank" rel="noopener noreferrer">
-                          <i className="fab fa-soundcloud"></i>
+                        <a href={member.socials.soundcloud} target="_blank" rel="noopener noreferrer" aria-label={`Listen to ${member.name} on SoundCloud (opens in new tab)`}>
+                          <i className="fab fa-soundcloud" aria-hidden="true"></i>
                         </a>
                       )}
                     </div>
@@ -143,7 +152,7 @@ function TeamPage() {
           </div>
         ) : (
           <div className="team-empty">
-            <div className="team-empty-icon">
+            <div className="team-empty-icon" aria-hidden="true">
               <i className="fas fa-users"></i>
             </div>
             <h3>Team Coming Soon</h3>
@@ -155,9 +164,9 @@ function TeamPage() {
         <div className="join-team-section">
           <h3>Interested in Joining the Team?</h3>
           <p>We're always looking for talented producers and engineers to collaborate with.</p>
-          <a href="/contact" className="join-team-btn">
+          <Link to="/contact" className="join-team-btn">
             Get in Touch
-          </a>
+          </Link>
         </div>
       </section>
     </div>

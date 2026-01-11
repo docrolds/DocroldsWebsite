@@ -1,16 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
+import { useScrollAnimation } from '../hooks/useScrollAnimation';
 
 function Instagram() {
+  const { ref: sectionRef, isVisible: sectionVisible } = useScrollAnimation({ threshold: 0.1 });
   const heartsContainerRef = useRef(null);
   const profileLinkRef = useRef(null);
-  const [instagramContent, setInstagramContent] = useState({
-    username: '@docrolds',
-    instagramUrl: 'https://www.instagram.com/docrolds/',
-    postIds: ['DNYNxdBRCfT', 'CJjYI9VBYji', 'DNOcw3uRDbY']
-  });
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  const [editForm, setEditForm] = useState({ ...instagramContent });
+  const heartIntervalRef = useRef(null);
 
   useEffect(() => {
     const createHeart = () => {
@@ -19,14 +14,14 @@ function Instagram() {
 
       const heart = document.createElement('div');
       heart.className = 'heart';
-      
+
       const drift = (Math.random() - 0.5) * 120;
       heart.style.setProperty('--drift', `${drift}px`);
       heart.style.left = `${20 + (Math.random() * 60)}%`;
       heart.style.animationDelay = `${Math.random() * 0.5}s`;
-      
+
       heartsContainer.appendChild(heart);
-      
+
       setTimeout(() => {
         heart.remove();
       }, 3500);
@@ -45,17 +40,25 @@ function Instagram() {
             button.classList.add('splash-in');
           }
 
+          // Create initial burst of hearts
           for (let i = 0; i < 5; i++) {
             setTimeout(() => createHeart(), i * 300);
           }
-          
-          const heartInterval = setInterval(() => {
-            if (Math.random() > 0.7) {
-              createHeart();
-            }
-          }, 800);
 
-          return () => clearInterval(heartInterval);
+          // Start continuous heart creation (only if not already running)
+          if (!heartIntervalRef.current) {
+            heartIntervalRef.current = setInterval(() => {
+              if (Math.random() > 0.7) {
+                createHeart();
+              }
+            }, 800);
+          }
+        } else {
+          // Clear interval when section leaves viewport
+          if (heartIntervalRef.current) {
+            clearInterval(heartIntervalRef.current);
+            heartIntervalRef.current = null;
+          }
         }
       });
     }, observerOptions);
@@ -65,9 +68,14 @@ function Instagram() {
       instagramObserver.observe(section);
     }
 
+    // Cleanup on unmount
     return () => {
       if (section) {
         instagramObserver.unobserve(section);
+      }
+      if (heartIntervalRef.current) {
+        clearInterval(heartIntervalRef.current);
+        heartIntervalRef.current = null;
       }
     };
   }, []);
@@ -79,29 +87,30 @@ function Instagram() {
   ];
 
   return (
-    <section id="instagram">
-      <h2 className="section-title">Follow on Instagram</h2>
-      <div className="instagram-header">
+    <section id="instagram" ref={sectionRef}>
+      <h2 className={`section-title animate-on-scroll fade-up ${sectionVisible ? 'visible' : ''}`}>Follow on Instagram</h2>
+      <div className={`instagram-header animate-on-scroll fade-up ${sectionVisible ? 'visible' : ''}`} style={{ transitionDelay: '0.1s' }}>
         <div className="hearts-container" ref={heartsContainerRef}></div>
-        <a 
-          href="https://www.instagram.com/docrolds/" 
-          target="_blank" 
-          rel="noopener noreferrer" 
+        <a
+          href="https://www.instagram.com/docrolds/"
+          target="_blank"
+          rel="noopener noreferrer"
           className="instagram-profile-link"
           ref={profileLinkRef}
+          aria-label="Follow @docrolds on Instagram (opens in new tab)"
         >
-          <i className="fab fa-instagram"></i>
+          <i className="fab fa-instagram" aria-hidden="true"></i>
           <span>@docrolds</span>
         </a>
       </div>
-      <div className="instagram-posts-grid">
+      <div className={`instagram-posts-grid animate-on-scroll fade-up ${sectionVisible ? 'visible' : ''}`} style={{ transitionDelay: '0.2s' }}>
         {posts.map((postId, index) => (
-          <div key={index} className="instagram-post-wrapper">
-            <iframe 
+          <div key={postId} className="instagram-post-wrapper" style={{ transitionDelay: `${0.25 + index * 0.1}s` }}>
+            <iframe
               src={`https://www.instagram.com/p/${postId}/embed`}
-              frameBorder="0" 
-              scrolling="no" 
-              allowTransparency="true"
+              title={`Instagram post ${postId}`}
+              loading="lazy"
+              style={{ border: 'none' }}
             ></iframe>
           </div>
         ))}

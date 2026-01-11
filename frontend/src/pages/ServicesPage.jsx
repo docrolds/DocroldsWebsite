@@ -166,10 +166,10 @@ function ServicesPage() {
       </div>
       <ul className={`card-features ${isWide ? 'two-col' : ''}`}>
         {features.map((feature, idx) => (
-          <li key={idx}><i className="fas fa-check"></i>{feature}</li>
+          <li key={idx}><i className="fas fa-check" aria-hidden="true"></i>{feature}</li>
         ))}
       </ul>
-      <button className="card-cta" onClick={() => handleServiceClick(title)}>
+      <button className="card-cta" onClick={() => handleServiceClick(title)} aria-label={`${cta} for ${title}`}>
         {cta}
       </button>
     </div>
@@ -188,14 +188,17 @@ function ServicesPage() {
       </section>
 
       {/* Sticky Tab Navigation */}
-      <nav className="service-tabs">
+      <nav className="service-tabs" role="tablist" aria-label="Service categories">
         {serviceTabs.map((tab) => (
           <button
             key={tab.id}
             className={`service-tab ${activeTab === tab.id ? 'active' : ''}`}
             onClick={() => setActiveTab(tab.id)}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            aria-controls={`${tab.id}-panel`}
           >
-            <i className={`fas ${tab.icon}`}></i>
+            <i className={`fas ${tab.icon}`} aria-hidden="true"></i>
             <span>{tab.label}</span>
           </button>
         ))}
@@ -205,10 +208,10 @@ function ServicesPage() {
       <div className="tab-content">
         {/* Recording Tab */}
         {activeTab === 'recording' && (
-          <section className="service-section">
+          <section className="service-section" role="tabpanel" id="recording-panel" aria-label="Recording services">
             <div className="section-header">
               <div className="section-icon">
-                <i className="fas fa-microphone"></i>
+                <i className="fas fa-microphone" aria-hidden="true"></i>
               </div>
               <h2>Studio Sessions</h2>
               <p>Step into our professionally treated recording space and capture your vision with pristine clarity. Our sessions include access to premium microphones, preamps, and outboard gear.</p>
@@ -238,24 +241,27 @@ function ServicesPage() {
               <button
                 className="dropdown-toggle"
                 onClick={() => setShowAllHours(!showAllHours)}
+                aria-expanded={showAllHours}
+                aria-controls="hours-content"
               >
                 <span>View All Hourly Options</span>
-                <i className={`fas fa-chevron-${showAllHours ? 'up' : 'down'}`}></i>
+                <i className={`fas fa-chevron-${showAllHours ? 'up' : 'down'}`} aria-hidden="true"></i>
               </button>
 
               {showAllHours && (
-                <div className="dropdown-content">
-                  <div className="hours-grid">
+                <div className="dropdown-content" id="hours-content">
+                  <div className="hours-grid" role="list">
                     {allHourlyRates.map((rate, index) => (
-                      <div
+                      <button
                         key={index}
                         className={`hour-option ${rate.hours === 4 ? 'popular' : ''}`}
                         onClick={() => handleServiceClick(`${rate.hours} Hour Session`)}
+                        aria-label={`Book ${rate.hours} hour session for ${rate.price}`}
                       >
                         <span className="hour-duration">{rate.hours} Hours</span>
                         <span className="hour-price">{rate.price}</span>
                         {rate.hours === 4 && <span className="hour-badge">Popular</span>}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -266,10 +272,10 @@ function ServicesPage() {
 
         {/* Mixing Tab */}
         {activeTab === 'mixing' && (
-          <section className="service-section">
+          <section className="service-section" role="tabpanel" id="mixing-panel" aria-label="Mixing services">
             <div className="section-header">
               <div className="section-icon">
-                <i className="fas fa-sliders-h"></i>
+                <i className="fas fa-sliders-h" aria-hidden="true"></i>
               </div>
               <h2>Mixing Services</h2>
               <p>Transform your raw recordings into polished, radio-ready tracks. Our mixing process combines vintage analog warmth with modern digital precision using gear like the 1176, LA-2A, and Neve 1073.</p>
@@ -293,10 +299,10 @@ function ServicesPage() {
 
         {/* Consulting Tab */}
         {activeTab === 'consulting' && (
-          <section className="service-section">
+          <section className="service-section" role="tabpanel" id="consulting-panel" aria-label="Consulting services">
             <div className="section-header">
               <div className="section-icon">
-                <i className="fas fa-briefcase"></i>
+                <i className="fas fa-briefcase" aria-hidden="true"></i>
               </div>
               <h2>Business Consultation</h2>
               <p>Navigate the business side of music with expert guidance. From copyright registration to distribution setup, we'll help you build a solid foundation for your music career.</p>
@@ -324,10 +330,10 @@ function ServicesPage() {
           <p>Let's discuss your project and find the perfect solution for your needs.</p>
           <div className="cta-buttons">
             <Link to="/contact" className="cta-primary">
-              <i className="fas fa-envelope"></i> Get in Touch
+              <i className="fas fa-envelope" aria-hidden="true"></i> Get in Touch
             </Link>
-            <a href="tel:7272825449" className="cta-secondary">
-              <i className="fas fa-phone"></i> (727) 282-5449
+            <a href="tel:7272825449" className="cta-secondary" aria-label="Call us at (727) 282-5449">
+              <i className="fas fa-phone" aria-hidden="true"></i> (727) 282-5449
             </a>
           </div>
         </div>

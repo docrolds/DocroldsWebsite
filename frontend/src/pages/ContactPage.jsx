@@ -48,11 +48,16 @@ function ContactPage() {
   };
 
   return (
-    <div className="page-container">
-      <section className="contact-section">
-        <h1 className="page-title">Contact Us</h1>
-        <p className="page-subtitle">Get in touch with Doc Rolds Productions</p>
+    <div className="contact-page-v2">
+      {/* Hero Section */}
+      <section className="contact-hero-v2">
+        <div className="contact-hero-content-v2">
+          <h1>Contact</h1>
+          <p>Let's talk about your next project</p>
+        </div>
+      </section>
 
+      <section className="contact-section">
         <div className="contact-container">
           {/* Contact Info */}
           <div className="contact-info">
@@ -61,27 +66,27 @@ function ContactPage() {
 
             <div className="contact-details">
               <div className="contact-item">
-                <div className="contact-icon">
+                <div className="contact-icon" aria-hidden="true">
                   <i className="fas fa-envelope"></i>
                 </div>
                 <div className="contact-text">
                   <span className="contact-label">Email</span>
-                  <a href="mailto:Docroldsllc@gmail.com">Docroldsllc@gmail.com</a>
+                  <a href="mailto:Docroldsllc@gmail.com" aria-label="Email us at Docroldsllc@gmail.com">Docroldsllc@gmail.com</a>
                 </div>
               </div>
 
               <div className="contact-item">
-                <div className="contact-icon">
+                <div className="contact-icon" aria-hidden="true">
                   <i className="fas fa-phone"></i>
                 </div>
                 <div className="contact-text">
                   <span className="contact-label">Phone</span>
-                  <a href="tel:7272825449">(727) 282-5449</a>
+                  <a href="tel:7272825449" aria-label="Call us at (727) 282-5449">(727) 282-5449</a>
                 </div>
               </div>
 
               <div className="contact-item">
-                <div className="contact-icon">
+                <div className="contact-icon" aria-hidden="true">
                   <i className="fas fa-clock"></i>
                 </div>
                 <div className="contact-text">
@@ -95,14 +100,14 @@ function ContactPage() {
             <div className="contact-socials">
               <h4>Follow Us</h4>
               <div className="social-icons">
-                <a href="https://instagram.com/docrolds" target="_blank" rel="noopener noreferrer" title="Instagram">
-                  <i className="fab fa-instagram"></i>
+                <a href="https://instagram.com/docrolds" target="_blank" rel="noopener noreferrer" title="Instagram" aria-label="Follow us on Instagram (opens in new tab)">
+                  <i className="fab fa-instagram" aria-hidden="true"></i>
                 </a>
-                <a href="https://open.spotify.com/playlist/6lQ3qQ34fxkf8roPLdbMYH" target="_blank" rel="noopener noreferrer" title="Spotify">
-                  <i className="fab fa-spotify"></i>
+                <a href="https://open.spotify.com/playlist/6lQ3qQ34fxkf8roPLdbMYH" target="_blank" rel="noopener noreferrer" title="Spotify" aria-label="Listen on Spotify (opens in new tab)">
+                  <i className="fab fa-spotify" aria-hidden="true"></i>
                 </a>
-                <a href="https://youtube.com/@docrolds" target="_blank" rel="noopener noreferrer" title="YouTube">
-                  <i className="fab fa-youtube"></i>
+                <a href="https://www.youtube.com/@RealDocrolds" target="_blank" rel="noopener noreferrer" title="YouTube" aria-label="Subscribe on YouTube (opens in new tab)">
+                  <i className="fab fa-youtube" aria-hidden="true"></i>
                 </a>
               </div>
             </div>
@@ -113,15 +118,15 @@ function ContactPage() {
             <h3>Send a Message</h3>
 
             {submitStatus === 'success' && (
-              <div className="form-success">
-                <i className="fas fa-check-circle"></i>
+              <div className="form-success" role="alert">
+                <i className="fas fa-check-circle" aria-hidden="true"></i>
                 <p>Message sent successfully! We'll get back to you soon.</p>
               </div>
             )}
 
             {submitStatus === 'error' && (
-              <div className="form-error">
-                <i className="fas fa-exclamation-circle"></i>
+              <div className="form-error" role="alert">
+                <i className="fas fa-exclamation-circle" aria-hidden="true"></i>
                 <p>Failed to send message. Please try again or email us directly.</p>
               </div>
             )}
@@ -182,15 +187,16 @@ function ContactPage() {
                 type="submit"
                 className="submit-btn"
                 disabled={isSubmitting}
+                aria-busy={isSubmitting}
               >
                 {isSubmitting ? (
                   <>
-                    <i className="fas fa-spinner fa-spin"></i>
+                    <i className="fas fa-spinner fa-spin" aria-hidden="true"></i>
                     Sending...
                   </>
                 ) : (
                   <>
-                    <i className="fas fa-paper-plane"></i>
+                    <i className="fas fa-paper-plane" aria-hidden="true"></i>
                     Send Message
                   </>
                 )}

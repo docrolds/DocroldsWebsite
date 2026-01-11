@@ -224,16 +224,30 @@ function Beats() {
                   </div>
                 </div>
                 <div className="playlist-item-price">
-                  ${beat.price || 50}
+                  {beat.soldExclusively ? (
+                    <span className="sold-badge-small">SOLD</span>
+                  ) : (
+                    `$${beat.price || 50}`
+                  )}
                 </div>
-                <button
-                  className="playlist-item-license-btn"
-                  onClick={(e) => handleLicenseClick(e, beat)}
-                  title="License this beat"
-                  aria-label={`License ${beat.title}`}
-                >
-                  <i className="fas fa-shopping-cart" aria-hidden="true"></i>
-                </button>
+                {beat.soldExclusively ? (
+                  <span
+                    className="playlist-item-license-btn sold"
+                    title="This beat has been sold exclusively"
+                    aria-label="Sold exclusively"
+                  >
+                    <i className="fas fa-check-circle" aria-hidden="true"></i>
+                  </span>
+                ) : (
+                  <button
+                    className="playlist-item-license-btn"
+                    onClick={(e) => handleLicenseClick(e, beat)}
+                    title="License this beat"
+                    aria-label={`License ${beat.title}`}
+                  >
+                    <i className="fas fa-shopping-cart" aria-hidden="true"></i>
+                  </button>
+                )}
               </li>
             );
           })}
@@ -316,6 +330,13 @@ function Beats() {
                       <i className="fas fa-envelope"></i> Contact Us
                     </Link>
                   )}
+                  <Link
+                    to={`/licenses?type=${license.id}`}
+                    className="license-terms-link"
+                    onClick={() => setSelectedBeatForLicense(null)}
+                  >
+                    View Full Terms <i className="fas fa-external-link-alt"></i>
+                  </Link>
                 </div>
               ))}
             </div>
