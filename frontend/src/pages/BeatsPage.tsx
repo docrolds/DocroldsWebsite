@@ -966,7 +966,9 @@ function BeatsPage(): ReactNode {
                     </button>
                   ) : (
                     <Link
-                      to="/contact"
+                      to={`/contact?message=${encodeURIComponent(
+                        `Hi, I'm interested in Exclusive Rights licensing for "${selectedBeatForLicense?.title}". Please reach out with pricing and details.`
+                      )}`}
                       className="license-add-btn contact"
                       onClick={() => setSelectedBeatForLicense(null)}
                     >

@@ -1,4 +1,5 @@
 import { useState, ChangeEvent, FormEvent, ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { API_URL } from '../config';
 
 // ============================================
@@ -19,11 +20,12 @@ type SubmitStatus = 'success' | 'error' | null;
 // ============================================
 
 function ContactPage(): ReactNode {
+  const [searchParams] = useSearchParams();
   const [formData, setFormData] = useState<ContactFormData>({
     name: '',
     email: '',
     phone: '',
-    message: ''
+    message: searchParams.get('message') || ''
   });
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submitStatus, setSubmitStatus] = useState<SubmitStatus>(null);
