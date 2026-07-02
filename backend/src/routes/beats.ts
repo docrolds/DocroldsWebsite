@@ -69,6 +69,16 @@ const sanitizeFilename = (filename: string): string => {
   return filename.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 200);
 };
 
+// Ensure upload directories exist before any upload is attempted. On a
+// fresh deploy 'uploads/' is gitignored and otherwise only ever created
+// as an incidental side effect of the first cover-art upload, so a
+// plain audio-only upload (no cover art) would fail until then.
+for (const dir of ['uploads/', 'uploads/covers/']) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
 /**
  * Disk storage configuration for audio files and cover art
  */
@@ -80,9 +90,6 @@ const diskStorage = multer.diskStorage({
       uploadDir = 'uploads/';
     } else if (file.mimetype.startsWith('image/')) {
       uploadDir = 'uploads/covers/';
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
     }
 
     cb(null, uploadDir);
