@@ -63,14 +63,19 @@ model Customer {
   profilePicture   String?    // URL to uploaded image
   stripeCustomerId String?    @unique
   isGuest          Boolean    @default(true)
+  isBlocked        Boolean    @default(false)
+  blockedAt        DateTime?
+  blockedReason    String?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
   // Relations
   orders        Order[]
+  bookings      Booking[]
   likes         BeatLike[]
   playlists     Playlist[]
   comments      Comment[]
+  commentLikes  CommentLike[]
   notifications Notification[]
 }
 
@@ -83,6 +88,7 @@ model Order {
   paymentStatus     String      @default("PENDING") // PENDING, PAID, FAILED, REFUNDED
   stripeSessionId   String?     @unique
   stripePaymentId   String?
+  squarePaymentId   String?     // Square payment ID
   subtotal          Float
   total             Float
   downloadToken     String      @unique @default(cuid())
@@ -157,6 +163,25 @@ model Comment {
   reportedBy String?   // customerId who reported
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+
+  // Reply support
+  parentId   String?
+  parent     Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies    Comment[] @relation("CommentReplies")
+
+  // Likes
+  likes      CommentLike[]
+}
+
+model CommentLike {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  commentId  String
+  comment    Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([customerId, commentId])
 }
 
 // ==========================================
@@ -208,4 +233,119 @@ model TeamMember {
   bio       String
   photoUrl  String
   createdAt DateTime @default(now())
+}
+
+// ==========================================
+// PROMO SYSTEM (Bundle Deals)
+// ==========================================
+
+model Promo {
+  id              String    @id @default(cuid())
+  name            String
+  description     String?
+  price           Float
+  originalValue   Float     // For showing savings
+
+  // What's included
+  includesSession Boolean   @default(true)
+  sessionHours    Int?      // Number of recording hours included
+  includesBeat    Boolean   @default(false)
+  beatLicenseType String?   // MP3, WAV, UNLIMITED
+  includesMixing  Boolean   @default(false)
+  mixingTier      String?   // BASIC, STANDARD, PRO, PREMIUM
+
+  // Availability
+  active          Boolean   @default(true)
+  validFrom       DateTime?
+  validUntil      DateTime?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  bookings        Booking[]
+}
+
+// ==========================================
+// BOOKING SYSTEM (Square Appointments)
+// ==========================================
+
+model Booking {
+  id              String    @id @default(cuid())
+  bookingNumber   String    @unique  // Format: BK-2025-00001
+
+  // Customer (optional - links to existing customer if logged in)
+  customerId      String?
+  customer        Customer? @relation(fields: [customerId], references: [id])
+
+  // Contact Info (always required)
+  name            String
+  email           String
+  phone           String
+  artistName      String?
+  songTitle       String?
+  recordingDetails String?
+
+  // Service Category (NEW)
+  category        String    @default("RECORDING")  // RECORDING, MIXING, PROMO
+
+  // Recording-specific
+  hours           Int?      // 1-10 hours
+
+  // Mixing-specific
+  mixingTier      String?   // BASIC, STANDARD, PRO, PREMIUM
+  mixingDelivery  String?   // remote, in-person
+  uploadedFiles   String[]  // URLs for remote mixing file uploads
+
+  // Promo-specific
+  promoId         String?
+  promo           Promo?    @relation(fields: [promoId], references: [id])
+  beatId          String?   // Selected beat for promo bundles
+
+  // Session Details (legacy - kept for backwards compatibility)
+  sessionType     String?   // STARTER, PROFESSIONAL, PREMIUM, CONSULTATION
+  sessionPrice    Float
+  durationMinutes Int?
+
+  // Square Integration
+  squareBookingId   String?   @unique
+  squareServiceId   String?
+  squareLocationId  String?
+
+  // Scheduling (optional for remote mixing)
+  scheduledAt     DateTime?
+  timezone        String    @default("America/New_York")
+
+  // Deposit Payment
+  depositAmount   Float     @default(25.00)
+  depositPaid     Boolean   @default(false)
+  depositPaymentId String?
+  depositPaidAt   DateTime?
+
+  // Balance (paid at studio or upfront for remote)
+  balanceAmount   Float
+  balancePaid     Boolean   @default(false)
+  balancePaymentId String?
+  balancePaidAt   DateTime?
+
+  // Status
+  status          String    @default("PENDING")  // PENDING, CONFIRMED, COMPLETED, CANCELLED, NO_SHOW
+
+  // Notifications
+  confirmationSent   Boolean   @default(false)
+  confirmationSentAt DateTime?
+  reminderSent       Boolean   @default(false)
+  reminderSentAt     DateTime?
+
+  // Admin
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([email])
+  @@index([scheduledAt])
+  @@index([status])
+  @@index([squareBookingId])
+  @@index([category])
+  @@index([promoId])
 }

@@ -28,7 +28,7 @@
 ### ⚠️ 3. DATABASE_URL Format (NEEDS VERIFICATION)
 **Current Value:**
 ```
-postgresql://docrolds_user:***REDACTED-DB-PASSWORD***@***REDACTED-DB-HOST***/docrolds
+postgresql://<redacted-user>:<redacted-password>@<redacted-host>-a/docrolds
 ```
 
 **Potential Issues:**
@@ -37,12 +37,12 @@ postgresql://docrolds_user:***REDACTED-DB-PASSWORD***@***REDACTED-DB-HOST***/doc
 
 **Recommended Format:**
 ```
-postgresql://docrolds_user:***REDACTED-DB-PASSWORD***@***REDACTED-DB-HOST***:5432/docrolds
+postgresql://<user>:<password>@<host>-a:5432/docrolds
 ```
 
 Or for connection pooling (recommended for production):
 ```
-postgresql://docrolds_user:***REDACTED-DB-PASSWORD***@dpg-d4gkhl7diees73avhc5g-pooler:5432/docrolds
+postgresql://<user>:<password>@<host>-pooler:5432/docrolds
 ```
 
 **Action Required:**
@@ -64,9 +64,9 @@ postgresql://docrolds_user:***REDACTED-DB-PASSWORD***@dpg-d4gkhl7diees73avhc5g-p
 
 ### ✅ 5. Environment Variables (VERIFIED)
 **Current Render Environment Variables:**
-- ✅ `ADMIN_PASSWORD=***REDACTED-PASSWORD***` - Matches code default
-- ✅ `ADMIN_USERNAME=admin` - Matches code default
-- ✅ `JWT_SECRET=***REDACTED-JWT-SECRET***` - Set correctly
+- ✅ `ADMIN_PASSWORD` - set (see Render dashboard, not committed here)
+- ✅ `ADMIN_USERNAME` - set (see Render dashboard, not committed here)
+- ✅ `JWT_SECRET` - set (see Render dashboard, not committed here)
 - ✅ `PORT=3000` - Matches code default
 - ⚠️ `DATABASE_URL` - See issue #3 above
 
@@ -118,7 +118,7 @@ You can test the login endpoint using curl:
 ```bash
 curl -X POST https://docrolds-api.onrender.com/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"***REDACTED-PASSWORD***"}'
+  -d '{"username":"admin","password":"admin123"}'
 ```
 
 Expected response:

@@ -121,7 +121,7 @@ const defaultData = {
         {
             id: 1,
             username: 'admin',
-            password: bcrypt.hashSync('***REDACTED-PASSWORD***', 10),
+            password: bcrypt.hashSync('admin123', 10),
             email: 'admin@docrolds.com',
             role: 'admin',
             createdAt: new Date().toISOString()
@@ -466,5 +466,5 @@ app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log('Default admin credentials:');
     console.log('Username: admin');
-    console.log('Password: ***REDACTED-PASSWORD***');
+    console.log('Password: admin123');
 });

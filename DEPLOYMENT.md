@@ -73,7 +73,7 @@ git push
 ## Verify Deployment
 
 1. Visit your Vercel frontend URL
-2. Navigate to Admin Dashboard (login with admin/***REDACTED-PASSWORD***)
+2. Navigate to Admin Dashboard (login with admin/admin123)
 3. Test adding a team member - it should persist after page reload
 
 ## Troubleshooting
@@ -90,6 +90,6 @@ If frontend can't connect to backend:
 - Or migrate to a database service
 
 ### Admin Login Not Working
-- Default credentials: `admin` / `***REDACTED-PASSWORD***`
+- Default credentials: `admin` / `admin123`
 - Check backend logs for errors
 - Verify `JWT_SECRET` is set in backend environment

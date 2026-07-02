@@ -15,7 +15,22 @@
       "Bash(npx prisma generate:*)",
       "Bash(npm start)",
       "Bash(powershell -Command \"Stop-Process -Id 73052 -Force\")",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(npx prisma:*)",
+      "Bash(node:*)",
+      "Bash(ls:*)",
+      "Bash(git fetch:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(grep:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(dir:*)",
+      "Bash(if [ -d \"c:/Users/Thedo/Downloads/DocroldsWebsite/backend/src/middleware\" ])",
+      "Bash(then echo \"exists\")",
+      "Bash(else echo \"not exists\")",
+      "Bash(fi)",
+      "Bash(if not exist \"c:\\\\Users\\\\Thedo\\\\Downloads\\\\DocroldsWebsite\\\\backend\\\\src\\\\routes\" mkdir \"c:\\\\Users\\\\Thedo\\\\Downloads\\\\DocroldsWebsite\\\\backend\\\\src\\\\routes\")",
+      "Bash(npm run typecheck:*)"
     ]
   }
 }

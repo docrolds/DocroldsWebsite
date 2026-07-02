@@ -135,7 +135,7 @@ cd frontend && npm run dev
 
 ### 3. **Test Admin Dashboard** (With MongoDB)
 - Login at http://localhost:5173/login.html
-- Username: `admin`, Password: `***REDACTED-PASSWORD***`
+- Username: `admin`, Password: `admin123`
 - Manage beats, users, team members
 
 ### 4. **Deploy to Production**

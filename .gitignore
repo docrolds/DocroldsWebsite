@@ -2,11 +2,16 @@
 /node_modules
 /dist
 
-# Env files
+# Env files - NEVER commit real credentials
 .env
 .env.local
-# Note: .env.staging is tracked for staging branch deployment
-# .env.production is tracked for production branch
+.env.staging
+.env.production
+backend/.env
+backend/.env.local
+backend/.env.staging
+backend/.env.production
+# Use .env.example as a template (safe to commit)
 
 # Log files
 npm-debug.log*

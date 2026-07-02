@@ -8,3 +8,4 @@ uploads/
 
 # Keep example files tracked
 !.env.example
+dist/

@@ -9,9 +9,9 @@ const fs = require('fs');
 
 // Best practice: use environment variables for configuration
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || '***REDACTED-JWT-SECRET***';
+const JWT_SECRET = process.env.JWT_SECRET || 'DreamsOverCareers1!';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '***REDACTED-PASSWORD***';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const EMAIL_USER = process.env.EMAIL_USER; // Add this
 const EMAIL_PASS = process.env.EMAIL_PASS; // Add this
 

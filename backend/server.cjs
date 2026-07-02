@@ -11,7 +11,7 @@ const sharp = require('sharp');
 const nodemailer = require('nodemailer');
 const sgMail = require('@sendgrid/mail');
 const { PrismaClient } = require('@prisma/client');
-const Stripe = require('stripe');
+const { SquareClient, SquareEnvironment } = require('square');
 const mm = require('music-metadata');
 require('dotenv').config();
 
@@ -21,16 +21,27 @@ if (process.env.SENDGRID_API_KEY) {
     console.log('[EMAIL] SendGrid initialized');
 }
 
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+// Initialize Square
+const squareClient = new SquareClient({
+    token: process.env.SQUARE_ACCESS_TOKEN,
+    environment: process.env.SQUARE_ENVIRONMENT === 'production'
+        ? SquareEnvironment.Production
+        : SquareEnvironment.Sandbox
+});
+console.log('[SQUARE] Square client initialized in', process.env.SQUARE_ENVIRONMENT || 'sandbox', 'mode');
 
 const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_CUSTOMER_SECRET = process.env.JWT_CUSTOMER_SECRET || 'customer-jwt-secret-change-in-production';
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '***REDACTED-PASSWORD***';
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
+if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
+    console.error('[SECURITY] ADMIN_USERNAME and ADMIN_PASSWORD must be set in environment variables');
+    process.exit(1);
+}
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const DOWNLOAD_LINK_EXPIRY_DAYS = parseInt(process.env.DOWNLOAD_LINK_EXPIRY_DAYS) || 7;
 
@@ -85,47 +96,11 @@ app.use(cors({
     credentials: true
 }));
 
-// Stripe webhook needs raw body - must be before express.json()
-app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
-    const sig = req.headers['stripe-signature'];
-    let event;
-
-    try {
-        event = stripe.webhooks.constructEvent(
-            req.body,
-            sig,
-            process.env.STRIPE_WEBHOOK_SECRET
-        );
-    } catch (err) {
-        console.error('[STRIPE WEBHOOK] Signature verification failed:', err.message);
-        return res.status(400).send(`Webhook Error: ${err.message}`);
-    }
-
-    console.log('[STRIPE WEBHOOK] Event received:', event.type);
-
-    try {
-        switch (event.type) {
-            case 'checkout.session.completed': {
-                const session = event.data.object;
-                await handleSuccessfulPayment(session);
-                break;
-            }
-            case 'checkout.session.expired': {
-                const session = event.data.object;
-                await handleExpiredSession(session);
-                break;
-            }
-            case 'payment_intent.payment_failed': {
-                const paymentIntent = event.data.object;
-                console.log('[STRIPE WEBHOOK] Payment failed:', paymentIntent.id);
-                break;
-            }
-        }
-        res.json({ received: true });
-    } catch (error) {
-        console.error('[STRIPE WEBHOOK] Error handling event:', error);
-        res.status(500).json({ error: 'Webhook handler failed' });
-    }
+// Square webhook (optional - for refunds/disputes)
+app.post('/api/webhooks/square', express.json(), async (req, res) => {
+    console.log('[SQUARE WEBHOOK] Event received:', req.body.type);
+    // Square webhooks can be added later for refunds, disputes, etc.
+    res.json({ received: true });
 });
 
 app.use(express.json());
@@ -166,10 +141,10 @@ const initializeDefaultData = async () => {
         console.log('[INIT] Hashed password generated');
         const result = await prisma.user.upsert({
             where: { username: ADMIN_USERNAME },
-            update: { password: hashedPassword },
+            update: { password: hashedPassword, email: ADMIN_USERNAME },
             create: {
                 username: ADMIN_USERNAME,
-                email: 'admin@docrolds.com',
+                email: ADMIN_USERNAME,
                 password: hashedPassword,
                 role: 'admin'
             }
@@ -353,6 +328,93 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
         });
     } catch (error) {
         console.error('[LOGIN] Server error');
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Unified login endpoint - checks both Admin (User) and Customer tables
+app.post('/api/auth/unified-login', loginLimiter, async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ message: 'Email and password are required' });
+        }
+
+        // First, check if it's an admin user (by username or email)
+        const adminUser = await prisma.user.findFirst({
+            where: {
+                OR: [
+                    { username: email },
+                    { email: email }
+                ]
+            }
+        });
+
+        if (adminUser) {
+            const validPassword = await bcrypt.compare(password, adminUser.password);
+            if (validPassword) {
+                const token = jwt.sign(
+                    { id: adminUser.id, username: adminUser.username, role: adminUser.role },
+                    JWT_SECRET,
+                    { expiresIn: '24h' }
+                );
+
+                return res.json({
+                    token,
+                    role: 'admin',
+                    user: {
+                        id: adminUser.id,
+                        username: adminUser.username,
+                        email: adminUser.email,
+                        role: adminUser.role
+                    }
+                });
+            }
+        }
+
+        // If not admin, check customer table
+        const customer = await prisma.customer.findUnique({
+            where: { email }
+        });
+
+        if (customer && !customer.isGuest && customer.password) {
+            // Check if customer is blocked
+            if (customer.isBlocked) {
+                return res.status(403).json({
+                    message: 'Account blocked',
+                    reason: customer.blockedReason || 'Your account has been blocked. Please contact support.'
+                });
+            }
+
+            const validPassword = await bcrypt.compare(password, customer.password);
+            if (validPassword) {
+                const token = jwt.sign(
+                    { id: customer.id, email: customer.email },
+                    JWT_CUSTOMER_SECRET,
+                    { expiresIn: '7d' }
+                );
+
+                return res.json({
+                    token,
+                    role: 'customer',
+                    customer: {
+                        id: customer.id,
+                        email: customer.email,
+                        firstName: customer.firstName,
+                        lastName: customer.lastName,
+                        stageName: customer.stageName,
+                        profilePicture: customer.profilePicture
+                    }
+                });
+            }
+        }
+
+        // No match found
+        return res.status(401).json({ message: 'Invalid credentials' });
+
+    } catch (error) {
+        console.error('[UNIFIED LOGIN] Server error:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -730,11 +792,27 @@ async function getAudioDuration(filePath) {
 
 app.get('/api/beats', async (req, res) => {
     try {
-        const beats = await prisma.beat.findMany();
+        const beats = await prisma.beat.findMany({
+            include: {
+                _count: {
+                    select: {
+                        likes: true,
+                        comments: true
+                    }
+                }
+            }
+        });
         if (beats.length === 0) {
             return res.json(mockBeats);
         }
-        res.json(beats);
+        // Transform _count to likeCount and commentCount for easier frontend usage
+        const beatsWithCounts = beats.map(beat => ({
+            ...beat,
+            likeCount: beat._count.likes,
+            commentCount: beat._count.comments,
+            _count: undefined
+        }));
+        res.json(beatsWithCounts);
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
     }
@@ -1212,17 +1290,18 @@ async function generateOrderNumber() {
     return `DR-${year}-${sequence.toString().padStart(5, '0')}`;
 }
 
-// Handle successful payment from Stripe webhook
-async function handleSuccessfulPayment(session) {
-    console.log('[PAYMENT] Processing successful payment:', session.id);
+// Handle successful payment (called after Square payment completes)
+async function handleSuccessfulPayment(order, squarePaymentId) {
+    console.log('[PAYMENT] Processing successful payment for order:', order.orderNumber);
 
-    const order = await prisma.order.findUnique({
-        where: { stripeSessionId: session.id },
+    // Reload order with relations
+    const fullOrder = await prisma.order.findUnique({
+        where: { id: order.id },
         include: { customer: true, items: { include: { beat: true } } }
     });
 
-    if (!order) {
-        console.error('[PAYMENT] Order not found for session:', session.id);
+    if (!fullOrder) {
+        console.error('[PAYMENT] Order not found:', order.id);
         return;
     }
 
@@ -1232,42 +1311,35 @@ async function handleSuccessfulPayment(session) {
         data: {
             status: 'COMPLETED',
             paymentStatus: 'PAID',
-            stripePaymentId: session.payment_intent
+            squarePaymentId: squarePaymentId
         }
+    });
+
+    // Reload with updated status for email
+    const updatedOrder = await prisma.order.findUnique({
+        where: { id: order.id },
+        include: { customer: true, items: { include: { beat: true } } }
     });
 
     // Send download email
-    await sendDownloadEmail(order);
+    await sendDownloadEmail(updatedOrder);
 
     // Create notification for customer
-    const beatTitles = order.items.map(item => item.beat.title).join(', ');
+    const beatTitles = fullOrder.items.map(item => item.beat.title).join(', ');
     await createNotification(
-        order.customerId,
+        fullOrder.customerId,
         'ORDER_COMPLETED',
         'Order Confirmed!',
-        `Your order #${order.orderNumber} is complete. Your beats are ready to download: ${beatTitles}`,
+        `Your order #${fullOrder.orderNumber} is complete. Your beats are ready to download: ${beatTitles}`,
         {
-            orderNumber: order.orderNumber,
-            downloadToken: order.downloadToken,
-            total: order.total,
-            actionUrl: `/download/${order.downloadToken}`
+            orderNumber: fullOrder.orderNumber,
+            downloadToken: fullOrder.downloadToken,
+            total: fullOrder.total,
+            actionUrl: `/download/${fullOrder.downloadToken}`
         }
     );
 
-    console.log('[PAYMENT] Order completed:', order.orderNumber);
-}
-
-// Handle expired checkout session
-async function handleExpiredSession(session) {
-    console.log('[PAYMENT] Session expired:', session.id);
-
-    await prisma.order.updateMany({
-        where: { stripeSessionId: session.id },
-        data: {
-            status: 'CANCELLED',
-            paymentStatus: 'FAILED'
-        }
-    });
+    console.log('[PAYMENT] Order completed:', fullOrder.orderNumber);
 }
 
 // Send download email to customer
@@ -1369,7 +1441,7 @@ async function sendDownloadEmail(order) {
 }
 
 // Customer authentication middleware
-const authenticateCustomer = (req, res, next) => {
+const authenticateCustomer = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
@@ -1377,10 +1449,28 @@ const authenticateCustomer = (req, res, next) => {
         return res.status(401).json({ message: 'Access denied' });
     }
 
-    jwt.verify(token, JWT_CUSTOMER_SECRET, (err, customer) => {
+    jwt.verify(token, JWT_CUSTOMER_SECRET, async (err, customer) => {
         if (err) {
             return res.status(403).json({ message: 'Invalid token' });
         }
+
+        // Check if customer is blocked
+        try {
+            const dbCustomer = await prisma.customer.findUnique({
+                where: { id: customer.id },
+                select: { isBlocked: true, blockedReason: true }
+            });
+
+            if (dbCustomer?.isBlocked) {
+                return res.status(403).json({
+                    message: 'Account blocked',
+                    reason: dbCustomer.blockedReason || 'Your account has been blocked. Please contact support.'
+                });
+            }
+        } catch (dbErr) {
+            console.error('Error checking blocked status:', dbErr);
+        }
+
         req.customer = customer;
         next();
     });
@@ -1404,13 +1494,18 @@ const optionalCustomerAuth = (req, res, next) => {
 };
 
 // ==========================================
-// CHECKOUT ENDPOINTS
+// CHECKOUT ENDPOINTS (Square Payments)
 // ==========================================
 
-// Create Stripe checkout session
-app.post('/api/checkout/create-session', async (req, res) => {
+// Process payment with Square
+app.post('/api/checkout/process-payment', async (req, res) => {
     try {
-        const { items, customer: customerData } = req.body;
+        const { sourceId, items, customer: customerData } = req.body;
+
+        // Validate source ID (payment token from Square Web Payments SDK)
+        if (!sourceId) {
+            return res.status(400).json({ message: 'Payment source is required' });
+        }
 
         if (!items || items.length === 0) {
             return res.status(400).json({ message: 'Cart is empty' });
@@ -1451,8 +1546,7 @@ app.post('/api/checkout/create-session', async (req, res) => {
             return res.status(400).json({ message: 'Some beats not found' });
         }
 
-        // Calculate totals and create line items
-        const lineItems = [];
+        // Calculate totals
         const orderItems = [];
         let subtotal = 0;
 
@@ -1477,19 +1571,6 @@ app.post('/api/checkout/create-session', async (req, res) => {
                 licenseType: item.licenseType,
                 licenseName,
                 price
-            });
-
-            lineItems.push({
-                price_data: {
-                    currency: 'usd',
-                    product_data: {
-                        name: beat.title,
-                        description: licenseName,
-                        images: beat.coverArt ? [`${FRONTEND_URL}${beat.coverArt}`] : []
-                    },
-                    unit_amount: price * 100 // Stripe uses cents
-                },
-                quantity: 1
             });
         }
 
@@ -1517,35 +1598,1199 @@ app.post('/api/checkout/create-session', async (req, res) => {
             }
         });
 
-        // Create Stripe checkout session
-        const session = await stripe.checkout.sessions.create({
-            payment_method_types: ['card'],
-            line_items: lineItems,
-            mode: 'payment',
-            success_url: `${FRONTEND_URL}/order/${orderNumber}?success=true`,
-            cancel_url: `${FRONTEND_URL}/checkout?cancelled=true`,
-            customer_email: customer.email,
-            metadata: {
-                orderId: order.id,
-                orderNumber
+        console.log('[SQUARE] Processing payment for order:', orderNumber, 'Amount:', subtotal * 100, 'cents');
+
+        // Process payment with Square
+        const paymentResponse = await squareClient.payments.create({
+            sourceId: sourceId,
+            idempotencyKey: order.id, // Use order ID as idempotency key
+            amountMoney: {
+                amount: BigInt(subtotal * 100), // Square uses cents as BigInt
+                currency: 'USD'
+            },
+            locationId: process.env.SQUARE_LOCATION_ID,
+            note: `Order ${orderNumber} - Doc Rolds Beats`,
+            referenceId: orderNumber
+        });
+
+        if (paymentResponse.payment.status === 'COMPLETED') {
+            console.log('[SQUARE] Payment successful:', paymentResponse.payment.id);
+
+            // Handle successful payment
+            await handleSuccessfulPayment(order, paymentResponse.payment.id);
+
+            res.json({
+                success: true,
+                orderNumber: order.orderNumber,
+                paymentId: paymentResponse.payment.id,
+                redirectUrl: `/order/${orderNumber}?success=true`
+            });
+        } else {
+            console.error('[SQUARE] Payment not completed:', paymentResponse.payment.status);
+
+            // Update order as failed
+            await prisma.order.update({
+                where: { id: order.id },
+                data: {
+                    status: 'CANCELLED',
+                    paymentStatus: 'FAILED'
+                }
+            });
+
+            res.status(400).json({
+                success: false,
+                message: 'Payment was not completed',
+                status: paymentResponse.payment.status
+            });
+        }
+
+    } catch (error) {
+        console.error('[CHECKOUT] Error processing payment:', error);
+
+        // Square API errors have specific structure
+        if (error.errors) {
+            const squareError = error.errors[0];
+            return res.status(400).json({
+                success: false,
+                message: squareError.detail || 'Payment failed',
+                code: squareError.code
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            message: 'Failed to process payment',
+            error: error.message
+        });
+    }
+});
+
+// Get Square Application ID for frontend
+app.get('/api/checkout/square-config', (req, res) => {
+    res.json({
+        applicationId: process.env.SQUARE_APPLICATION_ID,
+        locationId: process.env.SQUARE_LOCATION_ID,
+        environment: process.env.SQUARE_ENVIRONMENT || 'sandbox'
+    });
+});
+
+// ==========================================
+// BOOKING ENDPOINTS (Square Appointments)
+// ==========================================
+
+// Session type configuration (Legacy - kept for backwards compatibility)
+const SESSION_TYPES = {
+    STARTER: {
+        name: 'Starter Session',
+        price: 80,
+        durationMinutes: 60,
+        deposit: 25,
+        squareServiceId: process.env.SQUARE_SERVICE_STARTER_ID
+    },
+    PROFESSIONAL: {
+        name: 'Professional Session',
+        price: 150,
+        durationMinutes: 60,
+        deposit: 25,
+        squareServiceId: process.env.SQUARE_SERVICE_PROFESSIONAL_ID
+    },
+    PREMIUM: {
+        name: 'Premium Package',
+        price: 300,
+        durationMinutes: 120,
+        deposit: 25,
+        squareServiceId: process.env.SQUARE_SERVICE_PREMIUM_ID
+    },
+    CONSULTATION: {
+        name: 'Business Consultation',
+        price: 750,
+        durationMinutes: 60,
+        deposit: 25,
+        squareServiceId: process.env.SQUARE_SERVICE_CONSULTATION_ID
+    }
+};
+
+// NEW: Recording hours pricing
+const RECORDING_RATES = {
+    getRate: (hours) => {
+        if (hours >= 10) return 65;  // $15/hr discount
+        if (hours >= 5) return 70;   // $10/hr discount
+        return 80;                    // Base rate
+    },
+    deposit: 25
+};
+
+// NEW: Mixing tiers configuration
+const MIXING_TIERS = {
+    BASIC: {
+        name: 'Basic Mix',
+        price: 75,
+        turnaround: '3-5 days',
+        features: ['MP3/WAV Master'],
+        allowInPerson: false
+    },
+    STANDARD: {
+        name: 'Standard Mix',
+        price: 100,
+        turnaround: '3-5 days',
+        features: ['Vocal stems + beat track', 'MP3/WAV delivery', '2 revisions'],
+        allowInPerson: false
+    },
+    PRO: {
+        name: 'Pro Mix',
+        price: 200,
+        turnaround: '2-3 days',
+        features: ['Full stems + vocal stems', 'Mix & master', 'MP3/WAV/stems delivery'],
+        allowInPerson: true
+    },
+    PREMIUM: {
+        name: 'Premium Mix',
+        price: 300,
+        turnaround: '24-48 hrs',
+        features: ['Complete package', 'Clean version', 'All formats', 'Priority queue'],
+        allowInPerson: true
+    }
+};
+
+// Studio hourly rate for in-person mixing
+const STUDIO_HOURLY_RATE = 80;
+
+// Generate booking number (BK-YYYY-00001)
+async function generateBookingNumber() {
+    const year = new Date().getFullYear();
+    const prefix = `BK-${year}-`;
+
+    // Find the last booking number for this year
+    const lastBooking = await prisma.booking.findFirst({
+        where: {
+            bookingNumber: { startsWith: prefix }
+        },
+        orderBy: { bookingNumber: 'desc' }
+    });
+
+    let nextNumber = 1;
+    if (lastBooking) {
+        const lastNum = parseInt(lastBooking.bookingNumber.split('-')[2]);
+        nextNumber = lastNum + 1;
+    }
+
+    return `${prefix}${nextNumber.toString().padStart(5, '0')}`;
+}
+
+// Send booking confirmation email
+async function sendBookingConfirmationEmail(booking, serviceName = null) {
+    const session = SESSION_TYPES[booking.sessionType];
+    const displayName = serviceName || session?.name || booking.category || 'Service';
+    const firstName = booking.name.split(' ')[0];
+
+    // Handle remote mixing (no scheduling)
+    const hasSchedule = booking.scheduledAt != null;
+    const sessionDate = hasSchedule ? new Date(booking.scheduledAt).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    }) : null;
+    const sessionTime = hasSchedule ? new Date(booking.scheduledAt).toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: booking.timezone
+    }) : null;
+
+    const subject = hasSchedule
+        ? `Booking Confirmed: ${displayName} - ${sessionDate}`
+        : `Order Confirmed: ${displayName} - ${booking.bookingNumber}`;
+
+    // Build email body based on booking type
+    const introMessage = hasSchedule
+        ? 'Your session at Doc Rolds Studio has been confirmed. We\'re looking forward to working with you!'
+        : 'Your order has been confirmed. We\'ll start processing your files and get back to you soon!';
+
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0d0d0d; color: #ffffff; padding: 40px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #E83628; margin: 0;">Doc Rolds Studio</h1>
+                <p style="color: #888; margin: 5px 0 0 0;">${hasSchedule ? 'Booking Confirmed!' : 'Order Confirmed!'}</p>
+            </div>
+
+            <p>Hey ${escapeHtml(firstName)},</p>
+            <p>${introMessage}</p>
+
+            <div style="background: #1a1a1a; padding: 20px; border-radius: 12px; margin: 25px 0; border: 1px solid #333;">
+                <h3 style="color: #E83628; margin: 0 0 15px 0;">${hasSchedule ? 'Session Details' : 'Order Details'}</h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #888;">${hasSchedule ? 'Booking' : 'Order'} #:</td>
+                        <td style="padding: 8px 0; color: #fff; text-align: right;">${booking.bookingNumber}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #888;">Service:</td>
+                        <td style="padding: 8px 0; color: #fff; text-align: right;">${displayName}</td>
+                    </tr>
+                    ${hasSchedule ? `
+                    <tr>
+                        <td style="padding: 8px 0; color: #888;">Date:</td>
+                        <td style="padding: 8px 0; color: #fff; text-align: right;">${sessionDate}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #888;">Time:</td>
+                        <td style="padding: 8px 0; color: #fff; text-align: right;">${sessionTime}</td>
+                    </tr>
+                    ${booking.durationMinutes ? `
+                    <tr>
+                        <td style="padding: 8px 0; color: #888;">Duration:</td>
+                        <td style="padding: 8px 0; color: #fff; text-align: right;">${booking.durationMinutes} minutes</td>
+                    </tr>
+                    ` : ''}
+                    ` : `
+                    <tr>
+                        <td style="padding: 8px 0; color: #888;">Turnaround:</td>
+                        <td style="padding: 8px 0; color: #fff; text-align: right;">${booking.mixingTier === 'PREMIUM' ? '24-48 hrs' : booking.mixingTier === 'PRO' ? '2-3 days' : '3-5 days'}</td>
+                    </tr>
+                    `}
+                </table>
+            </div>
+
+            <div style="background: #1a1a1a; padding: 20px; border-radius: 12px; margin: 25px 0; border: 1px solid #333;">
+                <h3 style="color: #E83628; margin: 0 0 15px 0;">Payment Summary</h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #888;">${booking.balanceAmount > 0 ? 'Deposit' : 'Amount'} Paid:</td>
+                        <td style="padding: 8px 0; color: #22c55e; text-align: right;">$${booking.depositAmount.toFixed(2)} ✓</td>
+                    </tr>
+                    ${booking.balanceAmount > 0 ? `
+                    <tr>
+                        <td style="padding: 8px 0; color: #888;">Balance Due${hasSchedule ? ' at Studio' : ''}:</td>
+                        <td style="padding: 8px 0; color: #f59e0b; text-align: right;">$${booking.balanceAmount.toFixed(2)}</td>
+                    </tr>
+                    ` : ''}
+                    <tr style="border-top: 1px solid #333;">
+                        <td style="padding: 12px 0 8px; color: #fff; font-weight: bold;">Total:</td>
+                        <td style="padding: 12px 0 8px; color: #fff; text-align: right; font-weight: bold;">$${booking.sessionPrice.toFixed(2)}</td>
+                    </tr>
+                </table>
+            </div>
+
+            ${booking.songTitle || booking.recordingDetails || booking.artistName ? `
+            <div style="background: #1a1a1a; padding: 20px; border-radius: 12px; margin: 25px 0; border: 1px solid #333;">
+                <h3 style="color: #E83628; margin: 0 0 15px 0;">Your Project</h3>
+                ${booking.artistName ? `<p style="margin: 5px 0; color: #888;">Artist: <span style="color: #fff;">${escapeHtml(booking.artistName)}</span></p>` : ''}
+                ${booking.songTitle ? `<p style="margin: 5px 0; color: #888;">Song: <span style="color: #fff;">${escapeHtml(booking.songTitle)}</span></p>` : ''}
+                ${booking.recordingDetails ? `<p style="margin: 5px 0; color: #888;">Notes: <span style="color: #fff;">${escapeHtml(booking.recordingDetails)}</span></p>` : ''}
+            </div>
+            ` : ''}
+
+            ${hasSchedule ? `
+            <div style="background: rgba(232, 54, 40, 0.1); padding: 15px 20px; border-radius: 8px; border: 1px solid rgba(232, 54, 40, 0.3); margin: 25px 0;">
+                <p style="margin: 0; color: #E83628; font-size: 14px;">
+                    <strong>Need to reschedule?</strong> Contact us at least 24 hours before your session.
+                </p>
+            </div>
+            ` : `
+            <div style="background: rgba(34, 197, 94, 0.1); padding: 15px 20px; border-radius: 8px; border: 1px solid rgba(34, 197, 94, 0.3); margin: 25px 0;">
+                <p style="margin: 0; color: #22c55e; font-size: 14px;">
+                    <strong>What's next?</strong> We'll review your files and start working on your mix. You'll receive an email when it's ready!
+                </p>
+            </div>
+            `}
+
+            <p style="color: #888; font-size: 14px; margin-top: 30px;">
+                Questions? Reply to this email or call us at 727-282-5449.
+            </p>
+
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #333;">
+                <p style="color: #666; font-size: 12px; margin: 0;">
+                    © ${new Date().getFullYear()} Doc Rolds. All rights reserved.
+                </p>
+            </div>
+        </div>
+    `;
+
+    await sendEmail({ to: booking.email, subject, html });
+
+    // Update booking
+    await prisma.booking.update({
+        where: { id: booking.id },
+        data: { confirmationSent: true, confirmationSentAt: new Date() }
+    });
+
+    console.log(`[BOOKING] Confirmation email sent to ${booking.email}`);
+}
+
+// Get session types configuration (legacy)
+app.get('/api/bookings/session-types', (req, res) => {
+    const types = Object.entries(SESSION_TYPES).map(([id, config]) => ({
+        id,
+        name: config.name,
+        price: config.price,
+        durationMinutes: config.durationMinutes,
+        deposit: config.deposit,
+        balanceDue: config.price - config.deposit
+    }));
+    res.json(types);
+});
+
+// NEW: Get recording pricing configuration
+app.get('/api/bookings/recording-pricing', (req, res) => {
+    const pricing = [];
+    for (let hours = 1; hours <= 10; hours++) {
+        const rate = RECORDING_RATES.getRate(hours);
+        const total = hours * rate;
+        pricing.push({
+            hours,
+            rate,
+            total,
+            deposit: RECORDING_RATES.deposit,
+            balance: total - RECORDING_RATES.deposit,
+            discount: hours >= 10 ? 15 : hours >= 5 ? 10 : 0
+        });
+    }
+    res.json(pricing);
+});
+
+// NEW: Get mixing tiers configuration
+app.get('/api/bookings/mixing-tiers', (req, res) => {
+    const tiers = Object.entries(MIXING_TIERS).map(([id, config]) => ({
+        id,
+        name: config.name,
+        price: config.price,
+        turnaround: config.turnaround,
+        features: config.features,
+        allowInPerson: config.allowInPerson,
+        inPersonStudioRate: STUDIO_HOURLY_RATE
+    }));
+    res.json(tiers);
+});
+
+// NEW: Get active promos
+app.get('/api/bookings/promos', async (req, res) => {
+    try {
+        const now = new Date();
+        const promos = await prisma.promo.findMany({
+            where: {
+                active: true,
+                OR: [
+                    { validFrom: null },
+                    { validFrom: { lte: now } }
+                ],
+                AND: [
+                    {
+                        OR: [
+                            { validUntil: null },
+                            { validUntil: { gte: now } }
+                        ]
+                    }
+                ]
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        // Calculate savings for each promo
+        const promosWithSavings = promos.map(promo => ({
+            ...promo,
+            savings: promo.originalValue - promo.price,
+            savingsPercent: Math.round(((promo.originalValue - promo.price) / promo.originalValue) * 100)
+        }));
+
+        res.json(promosWithSavings);
+    } catch (error) {
+        console.error('[BOOKING] Get promos error:', error);
+        res.status(500).json({ message: 'Failed to fetch promos' });
+    }
+});
+
+// NEW: Get beats available for promo selection (MP3 Lease only)
+app.get('/api/bookings/promo-beats', async (req, res) => {
+    try {
+        const beats = await prisma.beat.findMany({
+            where: {
+                soldExclusively: false  // Only available beats
+            },
+            select: {
+                id: true,
+                title: true,
+                genre: true,
+                bpm: true,
+                key: true,
+                coverArt: true,
+                audioFile: true,  // MP3 preview
+                producedBy: true
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(beats);
+    } catch (error) {
+        console.error('[BOOKING] Get promo beats error:', error);
+        res.status(500).json({ message: 'Failed to fetch beats' });
+    }
+});
+
+// NEW: File upload endpoint for remote mixing
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Configure multer for mixing file uploads
+const mixingUploadDir = path.join(__dirname, 'uploads', 'mixing');
+if (!fs.existsSync(mixingUploadDir)) {
+    fs.mkdirSync(mixingUploadDir, { recursive: true });
+}
+
+const mixingStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, mixingUploadDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + '-' + file.originalname);
+    }
+});
+
+const mixingUpload = multer({
+    storage: mixingStorage,
+    limits: {
+        fileSize: 2 * 1024 * 1024 * 1024,  // 2GB total limit
+        files: 10  // Max 10 files
+    },
+    fileFilter: (req, file, cb) => {
+        const allowedExtensions = ['.wav', '.mp3', '.aiff', '.flac', '.zip'];
+        const ext = path.extname(file.originalname).toLowerCase();
+        if (allowedExtensions.includes(ext)) {
+            cb(null, true);
+        } else {
+            cb(new Error(`File type ${ext} not allowed. Accepted: WAV, MP3, AIFF, FLAC, ZIP`));
+        }
+    }
+});
+
+app.post('/api/bookings/upload', mixingUpload.array('files', 10), async (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ message: 'No files uploaded' });
+        }
+
+        // Calculate total size
+        const totalSize = req.files.reduce((sum, file) => sum + file.size, 0);
+        const maxSize = 2 * 1024 * 1024 * 1024;  // 2GB
+
+        if (totalSize > maxSize) {
+            // Clean up uploaded files
+            req.files.forEach(file => {
+                fs.unlink(file.path, () => {});
+            });
+            return res.status(400).json({ message: 'Total file size exceeds 2GB limit' });
+        }
+
+        // Return file info
+        const uploadedFiles = req.files.map(file => ({
+            filename: file.filename,
+            originalName: file.originalname,
+            size: file.size,
+            path: `/uploads/mixing/${file.filename}`
+        }));
+
+        console.log(`[BOOKING] Uploaded ${uploadedFiles.length} files for mixing (${(totalSize / 1024 / 1024).toFixed(1)} MB)`);
+
+        res.json({
+            success: true,
+            files: uploadedFiles,
+            totalSize
+        });
+    } catch (error) {
+        console.error('[BOOKING] Upload error:', error);
+        res.status(500).json({ message: error.message || 'File upload failed' });
+    }
+});
+
+// Serve uploaded mixing files
+app.use('/uploads/mixing', express.static(mixingUploadDir));
+
+// Get availability from Square Appointments
+app.post('/api/bookings/availability', async (req, res) => {
+    try {
+        const { sessionType, startDate, endDate } = req.body;
+
+        // Validate session type
+        const session = SESSION_TYPES[sessionType];
+        if (!session) {
+            return res.status(400).json({ message: 'Invalid session type' });
+        }
+
+        // Check if Square service ID is configured
+        if (!session.squareServiceId) {
+            // Return mock availability for development/testing
+            console.log('[BOOKING] Square service ID not configured, returning mock availability');
+            const mockAvailabilities = generateMockAvailability(startDate, endDate, session.durationMinutes);
+            return res.json({ success: true, availabilities: mockAvailabilities });
+        }
+
+        // Call Square Bookings API
+        const response = await squareClient.bookingsApi.searchAvailability({
+            query: {
+                filter: {
+                    startAtRange: {
+                        startAt: startDate,
+                        endAt: endDate
+                    },
+                    locationId: process.env.SQUARE_LOCATION_ID,
+                    segmentFilters: [{
+                        serviceVariationId: session.squareServiceId
+                    }]
+                }
             }
         });
 
-        // Update order with Stripe session ID
-        await prisma.order.update({
-            where: { id: order.id },
-            data: { stripeSessionId: session.id }
+        res.json({
+            success: true,
+            availabilities: response.result.availabilities || []
         });
+    } catch (error) {
+        console.error('[BOOKING] Availability error:', error);
+
+        // If Square API fails, return mock availability for development
+        if (error.statusCode === 401 || error.statusCode === 404) {
+            const { startDate, endDate, sessionType } = req.body;
+            const session = SESSION_TYPES[sessionType];
+            const mockAvailabilities = generateMockAvailability(startDate, endDate, session?.durationMinutes || 60);
+            return res.json({ success: true, availabilities: mockAvailabilities, mock: true });
+        }
+
+        res.status(500).json({ message: 'Failed to fetch availability', error: error.message });
+    }
+});
+
+// Generate mock availability for development
+function generateMockAvailability(startDate, endDate, durationMinutes) {
+    const availabilities = [];
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    // Generate slots for the next 14 days
+    for (let d = new Date(start); d <= end && d <= new Date(start.getTime() + 14 * 24 * 60 * 60 * 1000); d.setDate(d.getDate() + 1)) {
+        // Skip past dates
+        if (d < new Date()) continue;
+
+        // Skip Sundays (day 0)
+        if (d.getDay() === 0) continue;
+
+        // Generate time slots from 10 AM to 6 PM
+        for (let hour = 10; hour <= 18 - Math.ceil(durationMinutes / 60); hour++) {
+            const slotDate = new Date(d);
+            slotDate.setHours(hour, 0, 0, 0);
+
+            // Skip if slot is in the past
+            if (slotDate < new Date()) continue;
+
+            // Randomly skip some slots to simulate booked times
+            if (Math.random() > 0.7) continue;
+
+            availabilities.push({
+                startAt: slotDate.toISOString(),
+                locationId: process.env.SQUARE_LOCATION_ID || 'mock-location',
+                appointmentSegments: [{
+                    durationMinutes,
+                    teamMemberId: process.env.SQUARE_DEFAULT_TEAM_MEMBER_ID || 'mock-team-member',
+                    serviceVariationId: 'mock-service'
+                }]
+            });
+        }
+    }
+
+    return availabilities;
+}
+
+// Create booking with deposit/full payment (supports all categories)
+app.post('/api/bookings/create', async (req, res) => {
+    try {
+        const {
+            // Category and service selection
+            category,           // RECORDING, MIXING, PROMO
+            hours,              // For recording (1-10)
+            mixingTier,         // For mixing (BASIC, STANDARD, PRO, PREMIUM)
+            mixingDelivery,     // For mixing (remote, in-person)
+            uploadedFiles,      // For remote mixing (array of file paths)
+            promoId,            // For promo bookings
+            beatId,             // For promo beatings (selected beat)
+
+            // Scheduling (not needed for remote mixing)
+            startAt,
+
+            // Payment
+            sourceId,
+
+            // Legacy field support
+            sessionType,
+
+            // Customer info
+            customer: customerData
+        } = req.body;
+
+        // Validate customer info
+        if (!customerData?.name || !customerData?.email || !customerData?.phone) {
+            return res.status(400).json({ message: 'Missing required customer fields: name, email, phone' });
+        }
+
+        if (!sourceId) {
+            return res.status(400).json({ message: 'Missing payment source ID' });
+        }
+
+        // Determine booking type and calculate pricing
+        let bookingCategory = category || 'RECORDING';
+        let sessionPrice = 0;
+        let depositAmount = 25;
+        let balanceAmount = 0;
+        let durationMinutes = 60;
+        let serviceName = '';
+        let requiresScheduling = true;
+
+        // Handle different categories
+        if (bookingCategory === 'RECORDING' || sessionType) {
+            // RECORDING category (or legacy sessionType)
+            if (sessionType && SESSION_TYPES[sessionType]) {
+                // Legacy support
+                const session = SESSION_TYPES[sessionType];
+                sessionPrice = session.price;
+                depositAmount = session.deposit;
+                durationMinutes = session.durationMinutes;
+                serviceName = session.name;
+            } else {
+                // New hour-based recording
+                const recordingHours = hours || 1;
+                const rate = RECORDING_RATES.getRate(recordingHours);
+                sessionPrice = recordingHours * rate;
+                depositAmount = RECORDING_RATES.deposit;
+                durationMinutes = recordingHours * 60;
+                serviceName = `${recordingHours} Hour Recording Session`;
+            }
+            balanceAmount = sessionPrice - depositAmount;
+
+        } else if (bookingCategory === 'MIXING') {
+            // MIXING category
+            const tier = MIXING_TIERS[mixingTier];
+            if (!tier) {
+                return res.status(400).json({ message: 'Invalid mixing tier' });
+            }
+
+            if (mixingDelivery === 'remote') {
+                // Remote mixing - full payment upfront, no scheduling
+                sessionPrice = tier.price;
+                depositAmount = tier.price;  // Full payment
+                balanceAmount = 0;
+                requiresScheduling = false;
+                serviceName = `${tier.name} (Remote)`;
+                durationMinutes = null;
+            } else {
+                // In-person mixing - deposit + studio time
+                const studioHours = 2;  // Default 2hr for mixing session
+                sessionPrice = tier.price + (studioHours * STUDIO_HOURLY_RATE);
+                depositAmount = 25;
+                balanceAmount = sessionPrice - depositAmount;
+                serviceName = `${tier.name} (In-Person)`;
+                durationMinutes = studioHours * 60;
+            }
+
+        } else if (bookingCategory === 'PROMO') {
+            // PROMO category
+            if (!promoId) {
+                return res.status(400).json({ message: 'Missing promo ID' });
+            }
+
+            const promo = await prisma.promo.findUnique({ where: { id: promoId } });
+            if (!promo || !promo.active) {
+                return res.status(400).json({ message: 'Invalid or inactive promo' });
+            }
+
+            // Validate beat selection if promo includes beat
+            if (promo.includesBeat && !beatId) {
+                return res.status(400).json({ message: 'Promo requires beat selection' });
+            }
+
+            sessionPrice = promo.price;
+            depositAmount = 25;
+            balanceAmount = sessionPrice - depositAmount;
+            serviceName = promo.name;
+            durationMinutes = promo.sessionHours ? promo.sessionHours * 60 : 60;
+        }
+
+        // Validate scheduling for services that require it
+        if (requiresScheduling) {
+            if (!startAt) {
+                return res.status(400).json({ message: 'Missing scheduled time' });
+            }
+            const scheduledDate = new Date(startAt);
+            if (scheduledDate < new Date()) {
+                return res.status(400).json({ message: 'Cannot book a session in the past' });
+            }
+        }
+
+        // Generate booking number
+        const bookingNumber = await generateBookingNumber();
+        console.log(`[BOOKING] Creating ${bookingCategory} booking ${bookingNumber}: ${serviceName}`);
+
+        // Find or create customer
+        let customer = await prisma.customer.findUnique({
+            where: { email: customerData.email.toLowerCase() }
+        });
+
+        if (!customer) {
+            const nameParts = customerData.name.split(' ');
+            customer = await prisma.customer.create({
+                data: {
+                    email: customerData.email.toLowerCase(),
+                    firstName: nameParts[0],
+                    lastName: nameParts.slice(1).join(' ') || null,
+                    phone: customerData.phone,
+                    stageName: customerData.artistName || null,
+                    isGuest: true
+                }
+            });
+            console.log(`[BOOKING] Created new customer: ${customer.email}`);
+        }
+
+        // Create booking record (pending payment)
+        const booking = await prisma.booking.create({
+            data: {
+                bookingNumber,
+                customerId: customer.id,
+                name: customerData.name,
+                email: customerData.email.toLowerCase(),
+                phone: customerData.phone,
+                artistName: customerData.artistName || null,
+                songTitle: customerData.songTitle || null,
+                recordingDetails: customerData.recordingDetails || null,
+
+                // Category fields
+                category: bookingCategory,
+                hours: bookingCategory === 'RECORDING' ? (hours || null) : null,
+                mixingTier: bookingCategory === 'MIXING' ? mixingTier : null,
+                mixingDelivery: bookingCategory === 'MIXING' ? mixingDelivery : null,
+                uploadedFiles: uploadedFiles || [],
+                promoId: bookingCategory === 'PROMO' ? promoId : null,
+                beatId: bookingCategory === 'PROMO' ? beatId : null,
+
+                // Legacy sessionType (for backwards compatibility)
+                sessionType: sessionType || bookingCategory,
+                sessionPrice,
+                durationMinutes,
+                depositAmount,
+                balanceAmount,
+                scheduledAt: requiresScheduling ? new Date(startAt) : null,
+                squareLocationId: process.env.SQUARE_LOCATION_ID,
+                status: 'PENDING'
+            }
+        });
+
+        console.log(`[BOOKING] Created pending booking: ${booking.id}`);
+
+        // Process payment with Square (deposit or full payment depending on service type)
+        try {
+            const paymentResponse = await squareClient.paymentsApi.createPayment({
+                sourceId: sourceId,
+                idempotencyKey: booking.id,
+                amountMoney: {
+                    amount: BigInt(depositAmount * 100),
+                    currency: 'USD'
+                },
+                locationId: process.env.SQUARE_LOCATION_ID,
+                note: `${balanceAmount === 0 ? 'Payment' : 'Deposit'} for ${serviceName} - ${bookingNumber}`,
+                referenceId: bookingNumber
+            });
+
+            if (paymentResponse.result.payment.status === 'COMPLETED') {
+                console.log(`[BOOKING] Payment successful: ${paymentResponse.result.payment.id}`);
+
+                // Update booking with payment info
+                await prisma.booking.update({
+                    where: { id: booking.id },
+                    data: {
+                        depositPaid: true,
+                        depositPaymentId: paymentResponse.result.payment.id,
+                        depositPaidAt: new Date(),
+                        status: 'CONFIRMED',
+                        // If full payment (remote mixing), mark balance as paid too
+                        ...(balanceAmount === 0 && {
+                            balancePaid: true,
+                            balancePaidAt: new Date()
+                        })
+                    }
+                });
+
+                // Try to create Square Appointments booking for scheduled services
+                if (requiresScheduling && process.env.SQUARE_DEFAULT_TEAM_MEMBER_ID && durationMinutes) {
+                    try {
+                        const squareBooking = await squareClient.bookingsApi.createBooking({
+                            booking: {
+                                startAt: startAt,
+                                locationId: process.env.SQUARE_LOCATION_ID,
+                                appointmentSegments: [{
+                                    durationMinutes: durationMinutes,
+                                    teamMemberId: process.env.SQUARE_DEFAULT_TEAM_MEMBER_ID
+                                }],
+                                customerNote: `${serviceName} - ${customerData.artistName || ''} - ${customerData.songTitle || ''}`
+                            },
+                            idempotencyKey: `booking-${booking.id}`
+                        });
+
+                        await prisma.booking.update({
+                            where: { id: booking.id },
+                            data: { squareBookingId: squareBooking.result.booking.id }
+                        });
+                        console.log(`[BOOKING] Square Appointments booking created: ${squareBooking.result.booking.id}`);
+                    } catch (squareBookingError) {
+                        console.warn('[BOOKING] Could not create Square Appointments booking:', squareBookingError.message);
+                        // Continue anyway - payment was successful
+                    }
+                }
+
+                // Send confirmation email
+                const updatedBooking = await prisma.booking.findUnique({
+                    where: { id: booking.id },
+                    include: { promo: true }
+                });
+                await sendBookingConfirmationEmail(updatedBooking, serviceName);
+
+                // Create notification for customer
+                const notificationMessage = requiresScheduling
+                    ? `Your ${serviceName} is confirmed for ${new Date(startAt).toLocaleDateString()}.`
+                    : `Your ${serviceName} order has been received. We'll start processing your files soon!`;
+
+                await createNotification(
+                    customer.id,
+                    'BOOKING_CONFIRMED',
+                    'Booking Confirmed!',
+                    notificationMessage,
+                    { bookingNumber, category: bookingCategory, scheduledAt: startAt }
+                );
+
+                res.json({
+                    success: true,
+                    bookingNumber: booking.bookingNumber,
+                    message: 'Booking confirmed!'
+                });
+            } else {
+                // Payment not completed
+                console.log(`[BOOKING] Payment status: ${paymentResponse.result.payment.status}`);
+                await prisma.booking.update({
+                    where: { id: booking.id },
+                    data: { status: 'CANCELLED' }
+                });
+
+                res.status(400).json({
+                    success: false,
+                    message: 'Payment was not completed'
+                });
+            }
+        } catch (paymentError) {
+            console.error('[BOOKING] Payment error:', paymentError);
+
+            // Update booking status
+            await prisma.booking.update({
+                where: { id: booking.id },
+                data: { status: 'CANCELLED' }
+            });
+
+            res.status(400).json({
+                success: false,
+                message: paymentError.errors?.[0]?.detail || 'Payment processing failed'
+            });
+        }
+    } catch (error) {
+        console.error('[BOOKING] Create booking error:', error);
+        res.status(500).json({ message: 'Failed to create booking', error: error.message });
+    }
+});
+
+// Get booking by booking number (public)
+app.get('/api/bookings/:bookingNumber', async (req, res) => {
+    try {
+        const booking = await prisma.booking.findUnique({
+            where: { bookingNumber: req.params.bookingNumber },
+            include: {
+                customer: {
+                    select: { email: true, firstName: true, lastName: true }
+                }
+            }
+        });
+
+        if (!booking) {
+            return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        // Return session info along with booking
+        const session = SESSION_TYPES[booking.sessionType];
 
         res.json({
-            sessionId: session.id,
-            url: session.url,
-            orderNumber
+            ...booking,
+            sessionName: session?.name || booking.sessionType
+        });
+    } catch (error) {
+        console.error('[BOOKING] Get booking error:', error);
+        res.status(500).json({ message: 'Failed to fetch booking' });
+    }
+});
+
+// Admin: Get all bookings
+app.get('/api/admin/bookings', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { status, startDate, endDate } = req.query;
+
+        const where = {};
+        if (status) where.status = status;
+        if (startDate && endDate) {
+            where.scheduledAt = {
+                gte: new Date(startDate),
+                lte: new Date(endDate)
+            };
+        }
+
+        const bookings = await prisma.booking.findMany({
+            where,
+            include: {
+                customer: {
+                    select: { email: true, firstName: true, lastName: true }
+                }
+            },
+            orderBy: { scheduledAt: 'asc' }
         });
 
+        // Add session names
+        const bookingsWithSessionNames = bookings.map(booking => ({
+            ...booking,
+            sessionName: SESSION_TYPES[booking.sessionType]?.name || booking.sessionType
+        }));
+
+        res.json(bookingsWithSessionNames);
     } catch (error) {
-        console.error('[CHECKOUT] Error creating session:', error);
-        res.status(500).json({ message: 'Failed to create checkout session', error: error.message });
+        console.error('[BOOKING] Admin get bookings error:', error);
+        res.status(500).json({ message: 'Failed to fetch bookings' });
+    }
+});
+
+// Admin: Update booking status
+app.patch('/api/admin/bookings/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { status, notes, balancePaid } = req.body;
+
+        const updateData = {};
+        if (status) updateData.status = status;
+        if (notes !== undefined) updateData.notes = notes;
+        if (balancePaid !== undefined) {
+            updateData.balancePaid = balancePaid;
+            if (balancePaid) updateData.balancePaidAt = new Date();
+        }
+
+        const booking = await prisma.booking.update({
+            where: { id: req.params.id },
+            data: updateData
+        });
+
+        res.json(booking);
+    } catch (error) {
+        console.error('[BOOKING] Admin update error:', error);
+        res.status(500).json({ message: 'Failed to update booking' });
+    }
+});
+
+// Admin: Cancel booking
+app.delete('/api/admin/bookings/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const booking = await prisma.booking.findUnique({
+            where: { id: req.params.id }
+        });
+
+        if (!booking) {
+            return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        // Cancel in Square Appointments if it exists
+        if (booking.squareBookingId) {
+            try {
+                await squareClient.bookingsApi.cancelBooking(booking.squareBookingId, {
+                    idempotencyKey: `cancel-${booking.id}-${Date.now()}`
+                });
+                console.log(`[BOOKING] Cancelled Square booking: ${booking.squareBookingId}`);
+            } catch (squareCancelError) {
+                console.warn('[BOOKING] Could not cancel Square booking:', squareCancelError.message);
+            }
+        }
+
+        // Update status to cancelled
+        await prisma.booking.update({
+            where: { id: booking.id },
+            data: { status: 'CANCELLED' }
+        });
+
+        // TODO: Consider implementing deposit refund logic here
+
+        res.json({ success: true, message: 'Booking cancelled' });
+    } catch (error) {
+        console.error('[BOOKING] Cancel error:', error);
+        res.status(500).json({ message: 'Failed to cancel booking' });
+    }
+});
+
+// ==========================================
+// PROMO ADMIN ENDPOINTS
+// ==========================================
+
+// Admin: Get all promos
+app.get('/api/admin/promos', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const promos = await prisma.promo.findMany({
+            orderBy: { createdAt: 'desc' },
+            include: {
+                _count: {
+                    select: { bookings: true }
+                }
+            }
+        });
+
+        // Add computed fields
+        const promosWithStats = promos.map(promo => ({
+            ...promo,
+            bookingsCount: promo._count.bookings,
+            savings: promo.originalValue - promo.price,
+            savingsPercent: Math.round(((promo.originalValue - promo.price) / promo.originalValue) * 100)
+        }));
+
+        res.json(promosWithStats);
+    } catch (error) {
+        console.error('[PROMO] Admin get promos error:', error);
+        res.status(500).json({ message: 'Failed to fetch promos' });
+    }
+});
+
+// Admin: Create promo
+app.post('/api/admin/promos', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const {
+            name,
+            description,
+            price,
+            originalValue,
+            includesSession,
+            sessionHours,
+            includesBeat,
+            beatLicenseType,
+            includesMixing,
+            mixingTier,
+            active,
+            validFrom,
+            validUntil
+        } = req.body;
+
+        if (!name || !price || !originalValue) {
+            return res.status(400).json({ message: 'Missing required fields: name, price, originalValue' });
+        }
+
+        const promo = await prisma.promo.create({
+            data: {
+                name,
+                description,
+                price: parseFloat(price),
+                originalValue: parseFloat(originalValue),
+                includesSession: includesSession ?? true,
+                sessionHours: sessionHours ? parseInt(sessionHours) : null,
+                includesBeat: includesBeat ?? false,
+                beatLicenseType: beatLicenseType || null,
+                includesMixing: includesMixing ?? false,
+                mixingTier: mixingTier || null,
+                active: active ?? true,
+                validFrom: validFrom ? new Date(validFrom) : null,
+                validUntil: validUntil ? new Date(validUntil) : null
+            }
+        });
+
+        console.log(`[PROMO] Created promo: ${promo.name} (${promo.id})`);
+        res.status(201).json(promo);
+    } catch (error) {
+        console.error('[PROMO] Create error:', error);
+        res.status(500).json({ message: 'Failed to create promo' });
+    }
+});
+
+// Admin: Update promo
+app.patch('/api/admin/promos/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const {
+            name,
+            description,
+            price,
+            originalValue,
+            includesSession,
+            sessionHours,
+            includesBeat,
+            beatLicenseType,
+            includesMixing,
+            mixingTier,
+            active,
+            validFrom,
+            validUntil
+        } = req.body;
+
+        const updateData = {};
+        if (name !== undefined) updateData.name = name;
+        if (description !== undefined) updateData.description = description;
+        if (price !== undefined) updateData.price = parseFloat(price);
+        if (originalValue !== undefined) updateData.originalValue = parseFloat(originalValue);
+        if (includesSession !== undefined) updateData.includesSession = includesSession;
+        if (sessionHours !== undefined) updateData.sessionHours = sessionHours ? parseInt(sessionHours) : null;
+        if (includesBeat !== undefined) updateData.includesBeat = includesBeat;
+        if (beatLicenseType !== undefined) updateData.beatLicenseType = beatLicenseType || null;
+        if (includesMixing !== undefined) updateData.includesMixing = includesMixing;
+        if (mixingTier !== undefined) updateData.mixingTier = mixingTier || null;
+        if (active !== undefined) updateData.active = active;
+        if (validFrom !== undefined) updateData.validFrom = validFrom ? new Date(validFrom) : null;
+        if (validUntil !== undefined) updateData.validUntil = validUntil ? new Date(validUntil) : null;
+
+        const promo = await prisma.promo.update({
+            where: { id },
+            data: updateData
+        });
+
+        console.log(`[PROMO] Updated promo: ${promo.name} (${promo.id})`);
+        res.json(promo);
+    } catch (error) {
+        console.error('[PROMO] Update error:', error);
+        res.status(500).json({ message: 'Failed to update promo' });
+    }
+});
+
+// Admin: Delete promo
+app.delete('/api/admin/promos/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Check if promo has any bookings
+        const promo = await prisma.promo.findUnique({
+            where: { id },
+            include: {
+                _count: { select: { bookings: true } }
+            }
+        });
+
+        if (!promo) {
+            return res.status(404).json({ message: 'Promo not found' });
+        }
+
+        if (promo._count.bookings > 0) {
+            // Soft delete - just deactivate
+            await prisma.promo.update({
+                where: { id },
+                data: { active: false }
+            });
+            console.log(`[PROMO] Deactivated promo with bookings: ${promo.name}`);
+            return res.json({ success: true, message: 'Promo deactivated (has existing bookings)' });
+        }
+
+        // Hard delete if no bookings
+        await prisma.promo.delete({ where: { id } });
+        console.log(`[PROMO] Deleted promo: ${promo.name}`);
+        res.json({ success: true, message: 'Promo deleted' });
+    } catch (error) {
+        console.error('[PROMO] Delete error:', error);
+        res.status(500).json({ message: 'Failed to delete promo' });
     }
 });
 
@@ -2412,13 +3657,15 @@ app.delete('/api/playlists/:playlistId/beats/:beatId', authenticateCustomer, asy
 // SOCIAL FEATURES - COMMENTS
 // ==========================================
 
-// Get beat comments
+// Get beat comments (with replies and like counts)
 app.get('/api/beats/:id/comments', async (req, res) => {
     try {
+        // Get top-level comments only (no parentId)
         const comments = await prisma.comment.findMany({
             where: {
                 beatId: req.params.id,
-                isReported: false
+                isReported: false,
+                parentId: null // Only top-level comments
             },
             include: {
                 customer: {
@@ -2428,21 +3675,53 @@ app.get('/api/beats/:id/comments', async (req, res) => {
                         stageName: true,
                         profilePicture: true
                     }
+                },
+                replies: {
+                    where: { isReported: false },
+                    include: {
+                        customer: {
+                            select: {
+                                id: true,
+                                firstName: true,
+                                stageName: true,
+                                profilePicture: true
+                            }
+                        },
+                        _count: {
+                            select: { likes: true }
+                        }
+                    },
+                    orderBy: { createdAt: 'asc' }
+                },
+                _count: {
+                    select: { likes: true }
                 }
             },
             orderBy: { createdAt: 'desc' }
         });
 
-        res.json(comments);
+        // Transform to include likeCount
+        const transformedComments = comments.map(comment => ({
+            ...comment,
+            likeCount: comment._count.likes,
+            _count: undefined,
+            replies: comment.replies.map(reply => ({
+                ...reply,
+                likeCount: reply._count.likes,
+                _count: undefined
+            }))
+        }));
+
+        res.json(transformedComments);
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
 
-// Add comment
+// Add comment (or reply if parentId is provided)
 app.post('/api/beats/:id/comments', authenticateCustomer, async (req, res) => {
     try {
-        const { content } = req.body;
+        const { content, parentId } = req.body;
 
         if (!content || content.trim().length === 0) {
             return res.status(400).json({ message: 'Comment content is required' });
@@ -2452,11 +3731,26 @@ app.post('/api/beats/:id/comments', authenticateCustomer, async (req, res) => {
             return res.status(400).json({ message: 'Comment too long (max 1000 characters)' });
         }
 
+        // If parentId is provided, verify it exists and belongs to this beat
+        if (parentId) {
+            const parentComment = await prisma.comment.findFirst({
+                where: {
+                    id: parentId,
+                    beatId: req.params.id,
+                    parentId: null // Can only reply to top-level comments
+                }
+            });
+            if (!parentComment) {
+                return res.status(400).json({ message: 'Invalid parent comment' });
+            }
+        }
+
         const comment = await prisma.comment.create({
             data: {
                 customerId: req.customer.id,
                 beatId: req.params.id,
-                content: content.trim()
+                content: content.trim(),
+                parentId: parentId || null
             },
             include: {
                 customer: {
@@ -2466,11 +3760,19 @@ app.post('/api/beats/:id/comments', authenticateCustomer, async (req, res) => {
                         stageName: true,
                         profilePicture: true
                     }
+                },
+                _count: {
+                    select: { likes: true }
                 }
             }
         });
 
-        res.status(201).json(comment);
+        res.status(201).json({
+            ...comment,
+            likeCount: comment._count.likes,
+            _count: undefined,
+            replies: []
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
     }
@@ -2513,6 +3815,98 @@ app.post('/api/comments/:id/report', authenticateCustomer, async (req, res) => {
         });
 
         res.json({ message: 'Comment reported' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+// Like a comment
+app.post('/api/comments/:id/like', authenticateCustomer, async (req, res) => {
+    try {
+        const commentId = req.params.id;
+
+        // Check if comment exists
+        const comment = await prisma.comment.findUnique({
+            where: { id: commentId }
+        });
+
+        if (!comment) {
+            return res.status(404).json({ message: 'Comment not found' });
+        }
+
+        // Check if already liked
+        const existingLike = await prisma.commentLike.findUnique({
+            where: {
+                customerId_commentId: {
+                    customerId: req.customer.id,
+                    commentId
+                }
+            }
+        });
+
+        if (existingLike) {
+            return res.status(409).json({ message: 'Already liked' });
+        }
+
+        await prisma.commentLike.create({
+            data: {
+                customerId: req.customer.id,
+                commentId
+            }
+        });
+
+        // Get updated like count
+        const likeCount = await prisma.commentLike.count({
+            where: { commentId }
+        });
+
+        res.json({ liked: true, likeCount });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+// Unlike a comment
+app.delete('/api/comments/:id/like', authenticateCustomer, async (req, res) => {
+    try {
+        const commentId = req.params.id;
+
+        await prisma.commentLike.deleteMany({
+            where: {
+                customerId: req.customer.id,
+                commentId
+            }
+        });
+
+        // Get updated like count
+        const likeCount = await prisma.commentLike.count({
+            where: { commentId }
+        });
+
+        res.json({ liked: false, likeCount });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+// Get user's liked comments for a beat
+app.get('/api/beats/:id/comments/likes', authenticateCustomer, async (req, res) => {
+    try {
+        const beatId = req.params.id;
+
+        const likedComments = await prisma.commentLike.findMany({
+            where: {
+                customerId: req.customer.id,
+                comment: {
+                    beatId
+                }
+            },
+            select: {
+                commentId: true
+            }
+        });
+
+        res.json(likedComments.map(l => l.commentId));
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
     }
@@ -2701,17 +4095,21 @@ app.get('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req, re
 // Update order (admin)
 app.put('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const { status, paymentStatus, notes, extendDownload } = req.body;
+        const { status, paymentStatus, notes, adminNotes, extendDownload, items, totalAmount } = req.body;
 
         const updateData = {};
         if (status) updateData.status = status;
         if (paymentStatus) updateData.paymentStatus = paymentStatus;
+        // Support both 'notes' and 'adminNotes' - they both map to the notes field
         if (notes !== undefined) updateData.notes = notes;
+        if (adminNotes !== undefined) updateData.notes = adminNotes;
+        if (totalAmount !== undefined) updateData.totalAmount = parseFloat(totalAmount);
 
         if (extendDownload) {
             updateData.downloadExpiresAt = new Date(Date.now() + DOWNLOAD_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
         }
 
+        // Update order
         const order = await prisma.order.update({
             where: { id: req.params.id },
             data: updateData,
@@ -2721,8 +4119,35 @@ app.put('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req, re
             }
         });
 
-        res.json(order);
+        // Update order items (license upgrades)
+        if (items && Array.isArray(items)) {
+            for (const item of items) {
+                if (item.id && (item.licenseType || item.price !== undefined)) {
+                    await prisma.orderItem.update({
+                        where: { id: item.id },
+                        data: {
+                            licenseType: item.licenseType,
+                            licenseName: item.licenseType === 'UNLIMITED' ? 'Unlimited Lease' : 'Standard Lease',
+                            price: parseFloat(item.price)
+                        }
+                    });
+                }
+            }
+            console.log(`[ADMIN] Order ${order.orderNumber} items updated (license upgrade)`);
+        }
+
+        // Fetch updated order with items
+        const updatedOrder = await prisma.order.findUnique({
+            where: { id: req.params.id },
+            include: {
+                customer: true,
+                items: { include: { beat: true } }
+            }
+        });
+
+        res.json(updatedOrder);
     } catch (error) {
+        console.error('[ADMIN] Error updating order:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
@@ -2749,6 +4174,31 @@ app.post('/api/admin/orders/:id/resend-email', authenticateToken, requireAdmin, 
     }
 });
 
+// Delete order (admin only)
+app.delete('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Check order exists
+        const order = await prisma.order.findUnique({ where: { id } });
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+
+        // Delete order items first (foreign key constraint)
+        await prisma.orderItem.deleteMany({ where: { orderId: id } });
+
+        // Delete the order
+        await prisma.order.delete({ where: { id } });
+
+        console.log(`[ADMIN] Order ${order.orderNumber} deleted`);
+        res.json({ message: 'Order deleted successfully', orderNumber: order.orderNumber });
+    } catch (error) {
+        console.error('[ADMIN] Error deleting order:', error);
+        res.status(500).json({ message: 'Failed to delete order', error: error.message });
+    }
+});
+
 // ==========================================
 // ADMIN ENDPOINTS - CUSTOMERS
 // ==========================================
@@ -2765,9 +4215,12 @@ app.get('/api/admin/customers', authenticateToken, requireAdmin, async (req, res
                 stageName: true,
                 phone: true,
                 isGuest: true,
+                isBlocked: true,
+                blockedAt: true,
+                blockedReason: true,
                 createdAt: true,
                 _count: {
-                    select: { orders: true }
+                    select: { orders: true, comments: true }
                 }
             },
             orderBy: { createdAt: 'desc' }
@@ -2873,11 +4326,131 @@ app.post('/api/admin/customers/:id/reset-password', authenticateToken, requireAd
 // Delete customer (admin)
 app.delete('/api/admin/customers/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        await prisma.customer.delete({
-            where: { id: req.params.id }
+        const customerId = req.params.id;
+
+        // Check if customer exists
+        const customer = await prisma.customer.findUnique({
+            where: { id: customerId },
+            include: {
+                _count: {
+                    select: { orders: true }
+                }
+            }
         });
 
-        res.json({ message: 'Customer deleted' });
+        if (!customer) {
+            return res.status(404).json({ message: 'Customer not found' });
+        }
+
+        // Use a transaction to delete all related records first
+        await prisma.$transaction(async (tx) => {
+            // Delete comment likes by this customer
+            await tx.commentLike.deleteMany({
+                where: { customerId }
+            });
+
+            // Delete comments by this customer
+            await tx.comment.deleteMany({
+                where: { customerId }
+            });
+
+            // Delete beat likes
+            await tx.beatLike.deleteMany({
+                where: { customerId }
+            });
+
+            // Delete playlist beats (through playlists)
+            await tx.playlistBeat.deleteMany({
+                where: {
+                    playlist: { customerId }
+                }
+            });
+
+            // Delete playlists
+            await tx.playlist.deleteMany({
+                where: { customerId }
+            });
+
+            // Delete notifications
+            await tx.notification.deleteMany({
+                where: { customerId }
+            });
+
+            // Delete order items first, then orders
+            await tx.orderItem.deleteMany({
+                where: {
+                    order: { customerId }
+                }
+            });
+
+            await tx.order.deleteMany({
+                where: { customerId }
+            });
+
+            // Finally delete the customer
+            await tx.customer.delete({
+                where: { id: customerId }
+            });
+        });
+
+        res.json({ message: 'Customer and all related data deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting customer:', error);
+        res.status(500).json({ message: 'Failed to delete customer', error: error.message });
+    }
+});
+
+// Block customer (admin)
+app.post('/api/admin/customers/:id/block', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { reason } = req.body;
+
+        const customer = await prisma.customer.update({
+            where: { id: req.params.id },
+            data: {
+                isBlocked: true,
+                blockedAt: new Date(),
+                blockedReason: reason || 'Blocked by administrator'
+            },
+            select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                stageName: true,
+                isBlocked: true,
+                blockedAt: true,
+                blockedReason: true
+            }
+        });
+
+        res.json({ message: 'Customer blocked', customer });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+// Unblock customer (admin)
+app.post('/api/admin/customers/:id/unblock', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const customer = await prisma.customer.update({
+            where: { id: req.params.id },
+            data: {
+                isBlocked: false,
+                blockedAt: null,
+                blockedReason: null
+            },
+            select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                stageName: true,
+                isBlocked: true
+            }
+        });
+
+        res.json({ message: 'Customer unblocked', customer });
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
     }
@@ -2887,27 +4460,53 @@ app.delete('/api/admin/customers/:id', authenticateToken, requireAdmin, async (r
 // ADMIN ENDPOINTS - COMMENTS MODERATION
 // ==========================================
 
-// Get reported comments (admin)
+// Get comments (admin) - with optional filters
 app.get('/api/admin/comments', authenticateToken, requireAdmin, async (req, res) => {
     try {
+        const { reported, beatId, customerId, limit = 50 } = req.query;
+
+        const whereClause = {};
+        if (reported === 'true') {
+            whereClause.isReported = true;
+        }
+        if (beatId) {
+            whereClause.beatId = beatId;
+        }
+        if (customerId) {
+            whereClause.customerId = customerId;
+        }
+
         const comments = await prisma.comment.findMany({
-            where: { isReported: true },
+            where: whereClause,
             include: {
                 customer: {
                     select: {
+                        id: true,
                         email: true,
                         firstName: true,
-                        stageName: true
+                        stageName: true,
+                        isBlocked: true
                     }
                 },
                 beat: {
-                    select: { title: true }
+                    select: { id: true, title: true }
+                },
+                _count: {
+                    select: { likes: true, replies: true }
                 }
             },
-            orderBy: { reportedAt: 'desc' }
+            orderBy: { createdAt: 'desc' },
+            take: parseInt(limit)
         });
 
-        res.json(comments);
+        const transformedComments = comments.map(c => ({
+            ...c,
+            likeCount: c._count.likes,
+            replyCount: c._count.replies,
+            _count: undefined
+        }));
+
+        res.json(transformedComments);
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
     }

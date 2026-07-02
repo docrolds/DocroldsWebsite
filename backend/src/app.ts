@@ -1,0 +1,85 @@
+/**
+ * Express Application Setup
+ * Configures middleware, routes, and error handling
+ */
+
+import express, { Express, Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import path from 'path';
+import { config } from './config/env';
+import { errorHandler, notFoundHandler } from './middleware';
+import {
+  authRouter,
+  customersRouter,
+  beatsRouter,
+  ordersRouter,
+  adminRouter,
+  bookingsRouter
+} from './routes';
+
+// Create Express app
+const app: Express = express();
+
+// CORS configuration
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  config.frontendUrl,
+  'https://docrolds.com',
+  'https://www.docrolds.com',
+  'https://docrolds-staging.vercel.app'
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log(`[CORS] Blocked origin: ${origin}`);
+      callback(null, false);
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Body parsing middleware
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Static file serving for uploads
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+// Request logging in development
+if (config.nodeEnv !== 'production') {
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+    next();
+  });
+}
+
+// Health check endpoint
+app.get('/health', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// API Routes
+app.use('/api/auth', authRouter);
+app.use('/api/customers', customersRouter);
+app.use('/api/beats', beatsRouter);
+app.use('/api/bookings', bookingsRouter); // Booking availability, promos, create
+app.use('/api', ordersRouter); // Orders, checkout, downloads, webhooks
+app.use('/api', adminRouter);  // Team, content, photos, admin metrics
+
+// 404 handler for undefined routes
+app.use(notFoundHandler);
+
+// Global error handler
+app.use(errorHandler);
+
+export default app;

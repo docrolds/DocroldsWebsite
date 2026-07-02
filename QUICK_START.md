@@ -35,7 +35,7 @@ npm run dev
 To get **full features** (login, user management, database):
 
 1. **Set up MongoDB** (see TESTING_AND_DEPLOYMENT.md)
-2. **Test admin login** with credentials: `admin` / `***REDACTED-PASSWORD***`
+2. **Test admin login** with credentials: `admin` / `admin123`
 3. **Deploy to Render** (backend) and **Vercel** (frontend)
 
 ---

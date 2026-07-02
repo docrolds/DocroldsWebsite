@@ -26,7 +26,7 @@ Server runs on `http://localhost:3000`
 
 **Default Admin Credentials:**
 - Username: `admin`
-- Password: `***REDACTED-PASSWORD***`
+- Password: `admin123`
 
 ## Deployment to Render
 
