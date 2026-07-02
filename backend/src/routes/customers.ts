@@ -272,6 +272,13 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    if (customer.isBlocked) {
+      res.status(403).json({
+        message: customer.blockedReason || 'Your account has been blocked. Please contact support.',
+      } as ErrorResponse);
+      return;
+    }
+
     const validPassword = await bcrypt.compare(password, customer.password);
 
     if (!validPassword) {

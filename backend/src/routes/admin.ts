@@ -288,9 +288,10 @@ router.put(
       const key = req.params.key as string;
       const { value } = req.body as { value: Record<string, unknown> };
 
-      const updatedContent = await prisma.content.update({
+      const updatedContent = await prisma.content.upsert({
         where: { key },
-        data: { value: value as Prisma.InputJsonValue },
+        update: { value: value as Prisma.InputJsonValue },
+        create: { key, value: value as Prisma.InputJsonValue },
       });
 
       res.json(updatedContent.value);
