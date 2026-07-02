@@ -91,6 +91,7 @@ model Order {
   squarePaymentId   String?     // Square payment ID
   subtotal          Float
   total             Float
+  confirmationToken String      @unique @default(cuid()) // required to view order details via orderNumber
   downloadToken     String      @unique @default(cuid())
   downloadExpiresAt DateTime?   // 7 days for guests, null for accounts (unlimited)
   downloadCount     Int         @default(0)
@@ -273,6 +274,7 @@ model Promo {
 model Booking {
   id              String    @id @default(cuid())
   bookingNumber   String    @unique  // Format: BK-2025-00001
+  rescheduleToken String    @unique @default(cuid()) // required to view/reschedule via bookingNumber
 
   // Customer (optional - links to existing customer if logged in)
   customerId      String?

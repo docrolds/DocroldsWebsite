@@ -10,11 +10,22 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { SquareClient, SquareEnvironment } from 'square';
 import * as nodemailer from 'nodemailer';
+import * as crypto from 'crypto';
 import { config } from '../config/env';
 import { authenticateToken, requireAdmin } from '../middleware';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+/**
+ * Timing-safe comparison for access tokens (e.g. Booking.rescheduleToken),
+ * used to gate lookups keyed by a guessable/sequential public ID.
+ */
+const isValidToken = (provided: string, expected: string): boolean => {
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+};
 
 // ===========================================
 // SQUARE CLIENT INITIALIZATION
@@ -501,6 +512,7 @@ router.post(
 
 interface BookingForEmail {
   bookingNumber: string;
+  rescheduleToken: string;
   category: string;
   hours: number | null;
   mixingTier: string | null;
@@ -629,7 +641,7 @@ async function sendBookingConfirmationEmail(booking: BookingForEmail): Promise<v
 
         <div style="text-align: center; margin: 25px 0;">
           <p style="color: #999; font-size: 12px; margin-bottom: 10px;">Need to reschedule?</p>
-          <a href="${config.frontendUrl}/reschedule/${booking.bookingNumber}"
+          <a href="${config.frontendUrl}/reschedule/${booking.bookingNumber}?key=${booking.rescheduleToken}"
              style="display: inline-block; background: #333; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px;">
             Reschedule Booking
           </a>
@@ -807,18 +819,27 @@ router.put(
 /**
  * GET /api/bookings/reschedule/:bookingNumber
  * Get booking details for reschedule (public - accessed via email link)
+ * Requires a matching ?key= reschedule token since bookingNumber is
+ * sequential and guessable; the token is not.
  */
 router.get(
   '/reschedule/:bookingNumber',
   async (req: Request<{ bookingNumber: string }>, res: Response): Promise<void> => {
     try {
       const { bookingNumber } = req.params;
+      const key = typeof req.query.key === 'string' ? req.query.key : undefined;
+
+      if (!key) {
+        res.status(400).json({ message: 'Missing reschedule key' });
+        return;
+      }
 
       const booking = await prisma.booking.findUnique({
         where: { bookingNumber },
         select: {
           id: true,
           bookingNumber: true,
+          rescheduleToken: true,
           name: true,
           email: true,
           category: true,
@@ -832,7 +853,7 @@ router.get(
         },
       });
 
-      if (!booking) {
+      if (!booking || !isValidToken(key, booking.rescheduleToken)) {
         res.status(404).json({ message: 'Booking not found' });
         return;
       }
@@ -857,7 +878,8 @@ router.get(
         }
       }
 
-      res.json(booking);
+      const { rescheduleToken: _rescheduleToken, ...bookingResponse } = booking;
+      res.json(bookingResponse);
     } catch (error) {
       res.status(500).json({
         message: 'Server error',
@@ -877,9 +899,15 @@ router.put(
     try {
       const { bookingNumber } = req.params;
       const { newDateTime, email } = req.body;
+      const key = typeof req.query.key === 'string' ? req.query.key : undefined;
 
       if (!newDateTime) {
         res.status(400).json({ message: 'New date/time is required' });
+        return;
+      }
+
+      if (!key) {
+        res.status(400).json({ message: 'Missing reschedule key' });
         return;
       }
 
@@ -887,7 +915,7 @@ router.put(
         where: { bookingNumber },
       });
 
-      if (!booking) {
+      if (!booking || !isValidToken(key, booking.rescheduleToken)) {
         res.status(404).json({ message: 'Booking not found' });
         return;
       }

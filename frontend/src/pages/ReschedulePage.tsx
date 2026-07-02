@@ -1,5 +1,5 @@
 import { useState, useEffect, ReactNode } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { DayPicker } from 'react-day-picker';
 import { format, addDays, isBefore, startOfDay } from 'date-fns';
 import { useToast } from '../context/NotificationContext';
@@ -42,6 +42,8 @@ type RescheduleStep = 'verify' | 'select' | 'confirm' | 'success' | 'error';
 
 export default function ReschedulePage(): ReactNode {
   const { bookingNumber } = useParams<{ bookingNumber: string }>();
+  const [searchParams] = useSearchParams();
+  const rescheduleKey = searchParams.get('key') || '';
   const toast = useToast();
 
   // Step management
@@ -91,7 +93,7 @@ export default function ReschedulePage(): ReactNode {
     setError('');
 
     try {
-      const res = await fetch(`${API_URL}/bookings/reschedule/${bookingNumber}`);
+      const res = await fetch(`${API_URL}/bookings/reschedule/${bookingNumber}?key=${rescheduleKey}`);
       const data = await res.json();
 
       if (!res.ok) {
@@ -193,7 +195,7 @@ export default function ReschedulePage(): ReactNode {
     setError('');
 
     try {
-      const res = await fetch(`${API_URL}/bookings/reschedule/${bookingNumber}`, {
+      const res = await fetch(`${API_URL}/bookings/reschedule/${bookingNumber}?key=${rescheduleKey}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

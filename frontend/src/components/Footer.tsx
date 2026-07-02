@@ -52,7 +52,6 @@ function Footer(): JSX.Element {
     alert('Footer editing coming soon');
   };
 
-  // TODO: Update these URLs with actual Doc Rolds social profiles before launch
   const socialLinks: SocialLink[] = [
     { icon: 'fab fa-instagram', url: 'https://instagram.com/docrolds', title: 'Instagram' },
     { icon: 'fab fa-facebook', url: 'https://facebook.com/docrolds', title: 'Facebook' },

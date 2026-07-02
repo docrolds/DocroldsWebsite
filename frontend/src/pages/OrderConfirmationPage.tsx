@@ -66,6 +66,7 @@ export default function OrderConfirmationPage(): ReactNode {
   const pollInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isSuccess = searchParams.get('success') === 'true';
+  const confirmationKey = searchParams.get('key') || '';
 
   useEffect(() => {
     // Clear cart on successful checkout return (only once)
@@ -85,7 +86,7 @@ export default function OrderConfirmationPage(): ReactNode {
 
   const fetchOrder = async (): Promise<void> => {
     try {
-      const response = await fetch(`${API_URL}/orders/${orderNumber}`);
+      const response = await fetch(`${API_URL}/orders/${orderNumber}?key=${confirmationKey}`);
       const data: OrderApiResponse = await response.json();
 
       if (!response.ok) {
@@ -98,7 +99,7 @@ export default function OrderConfirmationPage(): ReactNode {
       if (data.paymentStatus === 'PENDING' && isSuccess && !pollInterval.current) {
         pollInterval.current = setInterval(async () => {
           try {
-            const res = await fetch(`${API_URL}/orders/${orderNumber}`);
+            const res = await fetch(`${API_URL}/orders/${orderNumber}?key=${confirmationKey}`);
             const updated: OrderApiResponse = await res.json();
             if (updated.paymentStatus === 'PAID') {
               setOrder(updated);

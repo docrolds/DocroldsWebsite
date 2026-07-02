@@ -75,6 +75,16 @@ const isValidEmail = (email: string): boolean => {
 };
 
 /**
+ * Timing-safe comparison for access tokens (e.g. Order.confirmationToken),
+ * used to gate lookups keyed by a guessable/sequential public ID.
+ */
+const isValidToken = (provided: string, expected: string): boolean => {
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+};
+
+/**
  * Escape HTML for email templates
  */
 const escapeHtml = (text: string | null | undefined): string => {
@@ -621,7 +631,7 @@ router.post(
           success: true,
           orderNumber: order.orderNumber,
           paymentId: paymentResponse.payment.id,
-          redirectUrl: `/order/${orderNumber}?success=true`,
+          redirectUrl: `/order/${orderNumber}?success=true&key=${order.confirmationToken}`,
         });
       } else {
         console.error(
@@ -687,12 +697,21 @@ router.get('/checkout/square-config', (_req: Request, res: Response): void => {
 /**
  * GET /api/orders/:orderNumber
  * Get order by order number (public - for order confirmation page)
+ * Requires a matching ?key= confirmation token since orderNumber is
+ * sequential and guessable; the token is not.
  */
 router.get(
   '/orders/:orderNumber',
   async (req: Request<{ orderNumber: string }>, res: Response): Promise<void> => {
     try {
       const { orderNumber } = req.params;
+      const key = typeof req.query.key === 'string' ? req.query.key : undefined;
+
+      if (!key) {
+        res.status(400).json({ message: 'Missing confirmation key' } as ErrorResponse);
+        return;
+      }
+
       const order = await prisma.order.findUnique({
         where: { orderNumber },
         include: {
@@ -721,7 +740,7 @@ router.get(
         },
       });
 
-      if (!order) {
+      if (!order || !isValidToken(key, order.confirmationToken)) {
         res.status(404).json({ message: 'Order not found' } as ErrorResponse);
         return;
       }
