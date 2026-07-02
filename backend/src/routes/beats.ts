@@ -17,6 +17,7 @@ import * as mm from 'music-metadata';
 import { PrismaClient } from '@prisma/client';
 import {
   authenticateToken,
+  requireAdmin,
   authenticateCustomer,
   optionalCustomerAuth,
 } from '../middleware';
@@ -259,6 +260,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 router.post(
   '/',
   authenticateToken,
+  requireAdmin,
   uploadBeats.fields([
     { name: 'audioFile', maxCount: 1 },
     { name: 'wavFile', maxCount: 1 },
@@ -356,6 +358,7 @@ router.post(
 router.put(
   '/:id',
   authenticateToken,
+  requireAdmin,
   uploadBeats.fields([
     { name: 'audioFile', maxCount: 1 },
     { name: 'wavFile', maxCount: 1 },
@@ -473,7 +476,7 @@ router.put(
  * Delete a beat (admin only)
  * Prevents deletion of purchased beats to preserve order history
  */
-router.delete('/:id', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id', authenticateToken, requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const beatId = parseRouteParam(req.params.id);
 

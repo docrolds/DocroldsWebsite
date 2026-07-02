@@ -11,6 +11,7 @@ import { PrismaClient } from '@prisma/client';
 import { SquareClient, SquareEnvironment } from 'square';
 import * as nodemailer from 'nodemailer';
 import { config } from '../config/env';
+import { authenticateToken, requireAdmin } from '../middleware';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -674,6 +675,8 @@ async function sendBookingConfirmationEmail(booking: BookingForEmail): Promise<v
  */
 router.get(
   '/',
+  authenticateToken,
+  requireAdmin,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { status, startDate, endDate } = req.query;
@@ -731,6 +734,8 @@ router.get(
  */
 router.get(
   '/:id',
+  authenticateToken,
+  requireAdmin,
   async (req: Request<{ id: string }>, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
@@ -764,6 +769,8 @@ router.get(
  */
 router.put(
   '/:id/status',
+  authenticateToken,
+  requireAdmin,
   async (req: Request<{ id: string }>, res: Response): Promise<void> => {
     try {
       const { id } = req.params;

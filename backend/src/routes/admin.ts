@@ -160,6 +160,7 @@ router.get('/team', async (_req: Request, res: Response): Promise<void> => {
 router.post(
   '/team',
   authenticateToken,
+  requireAdmin,
   upload.single('photo'),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -192,6 +193,7 @@ router.post(
 router.put(
   '/team/:id',
   authenticateToken,
+  requireAdmin,
   upload.single('photo'),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -229,6 +231,7 @@ router.put(
 router.delete(
   '/team/:id',
   authenticateToken,
+  requireAdmin,
   async (req: Request, res: Response): Promise<void> => {
     try {
       await prisma.teamMember.delete({
@@ -279,6 +282,7 @@ router.get('/content', async (_req: Request, res: Response): Promise<void> => {
 router.put(
   '/content/:key',
   authenticateToken,
+  requireAdmin,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const key = req.params.key as string;
@@ -327,6 +331,7 @@ router.get('/photos', async (_req: Request, res: Response): Promise<void> => {
 router.post(
   '/photos',
   authenticateToken,
+  requireAdmin,
   upload.single('photoFile'),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -385,6 +390,7 @@ router.post(
 router.put(
   '/photos/:id',
   authenticateToken,
+  requireAdmin,
   upload.single('photoFile'),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -448,6 +454,7 @@ router.put(
 router.delete(
   '/photos/:id',
   authenticateToken,
+  requireAdmin,
   async (req: Request, res: Response): Promise<void> => {
     try {
       await prisma.photo.delete({
