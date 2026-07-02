@@ -10,6 +10,7 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { SquareClient, SquareEnvironment } from 'square';
+import * as crypto from 'crypto';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as nodemailer from 'nodemailer';
@@ -353,17 +354,94 @@ function getLicenseTier(
 // ===========================================
 
 /**
+ * Verifies a Square webhook signature against the raw request body.
+ * See: https://developer.squareup.com/docs/webhooks/step3verify
+ */
+function isValidSquareSignature(
+  rawBody: Buffer | undefined,
+  signatureHeader: string | undefined
+): boolean {
+  const { webhookSignatureKey, webhookNotificationUrl } = config.square;
+
+  // If verification isn't configured, don't block webhooks - just skip
+  // the check (this is logged as a startup warning in production).
+  if (!webhookSignatureKey || !webhookNotificationUrl) {
+    return true;
+  }
+
+  if (!rawBody || !signatureHeader) {
+    return false;
+  }
+
+  const hmac = crypto.createHmac('sha256', webhookSignatureKey);
+  hmac.update(webhookNotificationUrl + rawBody.toString());
+  const expectedSignature = hmac.digest('base64');
+
+  const expected = Buffer.from(expectedSignature);
+  const received = Buffer.from(signatureHeader);
+  if (expected.length !== received.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(expected, received);
+}
+
+/**
+ * Extracts a Square payment ID from a refund or payment webhook payload,
+ * without assuming the full shape of Square's API types.
+ */
+function extractPaymentId(eventObject: Record<string, unknown>): string | undefined {
+  const refund = eventObject.refund as Record<string, unknown> | undefined;
+  const payment = eventObject.payment as Record<string, unknown> | undefined;
+  const paymentId = refund?.payment_id ?? payment?.id;
+  return typeof paymentId === 'string' ? paymentId : undefined;
+}
+
+/**
  * POST /api/webhooks/square
  * Handle Square webhook events (refunds, disputes, etc.)
  */
 router.post(
   '/webhooks/square',
   async (req: Request, res: Response): Promise<void> => {
+    const signature = req.header('x-square-hmacsha256-signature');
+    const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+
+    if (!isValidSquareSignature(rawBody, signature)) {
+      console.warn('[SQUARE WEBHOOK] Rejected event with invalid signature');
+      res.status(401).json({ message: 'Invalid signature' });
+      return;
+    }
+
     const event = req.body as SquareWebhookEvent;
     console.log('[SQUARE WEBHOOK] Event received:', event.type);
 
-    // Square webhooks can be extended later for refunds, disputes, etc.
-    // For now, just acknowledge receipt
+    try {
+      if (event.type === 'refund.created' || event.type === 'refund.updated') {
+        const paymentId = extractPaymentId(event.data.object);
+        if (paymentId) {
+          const order = await prisma.order.findFirst({
+            where: { squarePaymentId: paymentId },
+          });
+
+          if (order && order.paymentStatus !== 'REFUNDED') {
+            await prisma.order.update({
+              where: { id: order.id },
+              data: { paymentStatus: 'REFUNDED' },
+            });
+            console.log(
+              `[SQUARE WEBHOOK] Order ${order.orderNumber} marked as REFUNDED`
+            );
+          }
+        }
+      }
+    } catch (error) {
+      // Acknowledge receipt even if our processing fails - Square will
+      // retry undelivered/failed webhooks, and we don't want retries
+      // piling up for a bug on our side turning into duplicate work.
+      console.error('[SQUARE WEBHOOK] Error processing event:', error);
+    }
+
     res.json({ received: true });
   }
 );

@@ -93,7 +93,6 @@ interface Order {
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED';
   paymentStatus: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
   totalAmount: number;
-  stripePaymentId?: string;
   downloadToken?: string;
   downloadExpiresAt?: string;
   notes?: string;
@@ -2194,12 +2193,6 @@ function AdminModal({ type, item, onClose, onSave, token }: AdminModalProps): JS
                 <span className="label">Total:</span>
                 <span className="value">${parseFloat(String(orderFormData.totalAmount || 0)).toFixed(2)}</span>
               </div>
-              {orderFormData.stripePaymentId && (
-                <div className="order-detail-row">
-                  <span className="label">Stripe ID:</span>
-                  <span className="value">{orderFormData.stripePaymentId}</span>
-                </div>
-              )}
               <div className="order-items-section">
                 <h4>Items:</h4>
                 {orderFormData.items?.map((orderItem: OrderItem, i: number) => (

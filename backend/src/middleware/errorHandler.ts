@@ -250,6 +250,19 @@ export const errorHandler = (
       code: 'TOKEN_EXPIRED',
     };
   }
+  // Handle Multer upload errors (e.g., file too large)
+  else if (err.name === 'MulterError') {
+    const multerError = err as Error & { code?: string };
+    statusCode = 400;
+    response = {
+      message:
+        multerError.code === 'LIMIT_FILE_SIZE'
+          ? 'File is too large'
+          : `Upload error: ${multerError.message}`,
+      statusCode: 400,
+      code: multerError.code || 'UPLOAD_ERROR',
+    };
+  }
   // Handle syntax errors (e.g., invalid JSON body)
   else if (err instanceof SyntaxError && 'body' in err) {
     statusCode = 400;

@@ -42,7 +42,6 @@ interface Order {
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED';
   paymentStatus: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
   totalAmount: number;
-  stripePaymentId?: string;
   downloadToken?: string;
   downloadExpiresAt?: string;
   createdAt: string;

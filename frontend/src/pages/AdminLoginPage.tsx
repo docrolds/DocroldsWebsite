@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdminAuth } from '../context/AdminAuthContext';
 
@@ -11,8 +11,13 @@ export default function AdminLoginPage(): JSX.Element | null {
   const [loading, setLoading] = useState<boolean>(false);
 
   // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/admin');
+    }
+  }, [isAuthenticated, navigate]);
+
   if (isAuthenticated) {
-    navigate('/admin');
     return null;
   }
 

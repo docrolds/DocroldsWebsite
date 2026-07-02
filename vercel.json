@@ -1,7 +1,7 @@
 {
   "build": {
     "env": {
-      "VITE_API_URL": "https://doc-rolds-api.onrender.com/api"
+      "VITE_API_URL": "https://api.docrolds.com/api"
     }
   },
   "outputDirectory": "frontend/dist",

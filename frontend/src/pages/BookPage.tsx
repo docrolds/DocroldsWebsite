@@ -375,8 +375,8 @@ export default function BookPage(): ReactNode {
     try {
       // @ts-expect-error Square is loaded via script
       const payments = window.Square.payments(
-        import.meta.env.VITE_SQUARE_APP_ID,
-        import.meta.env.VITE_SQUARE_LOCATION_ID
+        import.meta.env.VITE_SQUARE_APP_ID || '',
+        import.meta.env.VITE_SQUARE_LOCATION_ID || ''
       );
 
       const cardInstance = await payments.card();

@@ -22,6 +22,8 @@ interface SquareConfig {
   accessToken: string;
   locationId: string;
   environment: 'sandbox' | 'production';
+  webhookSignatureKey: string | undefined;
+  webhookNotificationUrl: string | undefined;
 }
 
 interface EmailConfig {
@@ -156,6 +158,8 @@ function buildConfig(): Config {
       accessToken: squareAccessToken,
       locationId: squareLocationId,
       environment: squareEnv as SquareConfig['environment'],
+      webhookSignatureKey: process.env.SQUARE_WEBHOOK_SIGNATURE_KEY,
+      webhookNotificationUrl: process.env.SQUARE_WEBHOOK_NOTIFICATION_URL,
     },
 
     email: {
@@ -192,6 +196,10 @@ function warnInsecureDefaults(config: Config): void {
 
     if (!config.cronSecret) {
       warnings.push('CRON_SECRET is not set (cron endpoints unprotected)');
+    }
+
+    if (!config.square.webhookSignatureKey) {
+      warnings.push('SQUARE_WEBHOOK_SIGNATURE_KEY is not set (webhook signature verification disabled)');
     }
 
     if (warnings.length > 0) {

@@ -96,6 +96,9 @@ const diskStorage = multer.diskStorage({
  */
 const uploadBeats = multer({
   storage: diskStorage,
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB per file (covers uncompressed WAV masters)
+  },
   fileFilter: (_req, file, cb) => {
     const allowedAudio = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/ogg'];
     const allowedImage = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
