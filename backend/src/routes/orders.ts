@@ -13,9 +13,8 @@ import { SquareClient, SquareEnvironment } from 'square';
 import * as crypto from 'crypto';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as nodemailer from 'nodemailer';
-import sgMail = require('@sendgrid/mail');
 import { config } from '../config/env';
+import { sendEmail } from '../services/email';
 import type {
   CartItem,
   LicenseType,
@@ -43,24 +42,6 @@ console.log(
   config.square.environment,
   'mode'
 );
-
-// Initialize SendGrid if API key is available
-if (config.sendgrid.apiKey) {
-  sgMail.setApiKey(config.sendgrid.apiKey);
-  console.log('[EMAIL] SendGrid initialized');
-}
-
-// ===========================================
-// EMAIL CONFIGURATION
-// ===========================================
-
-const emailTransporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: config.email.user,
-    pass: config.email.appPass,
-  },
-});
 
 // ===========================================
 // HELPER FUNCTIONS
@@ -259,7 +240,6 @@ async function sendDownloadEmail(order: OrderWithRelations): Promise<void> {
     : '';
 
   const mailOptions = {
-    from: config.email.user,
     to: order.customer.email,
     subject: `Your Doc Rolds Order #${order.orderNumber} - Download Ready!`,
     html: `
@@ -324,7 +304,7 @@ async function sendDownloadEmail(order: OrderWithRelations): Promise<void> {
   };
 
   try {
-    await emailTransporter.sendMail(mailOptions);
+    await sendEmail(mailOptions);
     await prisma.order.update({
       where: { id: order.id },
       data: { emailSent: true },

@@ -9,10 +9,10 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { SquareClient, SquareEnvironment } from 'square';
-import * as nodemailer from 'nodemailer';
 import * as crypto from 'crypto';
 import { config } from '../config/env';
 import { authenticateToken, requireAdmin } from '../middleware';
+import { sendEmail } from '../services/email';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -37,18 +37,6 @@ const squareClient = new SquareClient({
     config.square.environment === 'production'
       ? SquareEnvironment.Production
       : SquareEnvironment.Sandbox,
-});
-
-// ===========================================
-// EMAIL CONFIGURATION
-// ===========================================
-
-const emailTransporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: config.email.user,
-    pass: config.email.appPass,
-  },
 });
 
 // ===========================================
@@ -331,6 +319,96 @@ router.get(
 );
 
 // ===========================================
+// SERVER-SIDE PRICING
+// ===========================================
+// Mirrors frontend/src/pages/BookPage.tsx's calculatePayment(). The client
+// only ever sends the *inputs* (category/hours/tier/etc) - price and
+// deposit are always computed here so a modified request can't set an
+// arbitrary charge amount.
+
+interface MixingTierConfig {
+  id: string;
+  price: number;
+  allowInPerson: boolean;
+}
+
+const MIXING_TIERS: MixingTierConfig[] = [
+  { id: 'BASIC', price: 75, allowInPerson: false },
+  { id: 'STANDARD', price: 100, allowInPerson: false },
+  { id: 'PRO', price: 200, allowInPerson: true },
+  { id: 'PREMIUM', price: 300, allowInPerson: true },
+];
+
+const CONSULTING_PRICES: Record<string, number> = {
+  '30min': 50,
+  '60min': 85,
+};
+
+const DEFAULT_DEPOSIT = 25;
+const IN_PERSON_MIXING_STUDIO_HOURS = 2;
+const IN_PERSON_MIXING_HOURLY_RATE = 80;
+
+interface BookingPricingInput {
+  category: string;
+  hours?: number;
+  mixingTier?: string;
+  mixingDelivery?: string;
+  consultingDuration?: string;
+  promoId?: string;
+}
+
+interface BookingPricingResult {
+  deposit: number;
+  total: number;
+}
+
+/**
+ * Computes the deposit/total for a booking from server-trusted inputs.
+ * Returns null if the combination of inputs doesn't resolve to a valid,
+ * known price (caller should reject the booking in that case).
+ */
+async function calculateBookingPrice(
+  input: BookingPricingInput
+): Promise<BookingPricingResult | null> {
+  const { category, hours, mixingTier, mixingDelivery, consultingDuration, promoId } = input;
+
+  if (category === 'recording') {
+    if (!hours || hours < 1) return null;
+    const rate = hours >= 10 ? 65 : hours >= 5 ? 70 : 80;
+    return { deposit: DEFAULT_DEPOSIT, total: hours * rate };
+  }
+
+  if (category === 'mixing') {
+    const tier = MIXING_TIERS.find((t) => t.id === mixingTier);
+    if (!tier) return null;
+
+    if (mixingDelivery === 'in-person') {
+      if (!tier.allowInPerson) return null;
+      const total =
+        tier.price + IN_PERSON_MIXING_STUDIO_HOURS * IN_PERSON_MIXING_HOURLY_RATE;
+      return { deposit: DEFAULT_DEPOSIT, total };
+    }
+
+    return { deposit: tier.price, total: tier.price };
+  }
+
+  if (category === 'promo') {
+    if (!promoId) return null;
+    const promo = await prisma.promo.findUnique({ where: { id: promoId } });
+    if (!promo || !promo.active) return null;
+    return { deposit: DEFAULT_DEPOSIT, total: promo.price };
+  }
+
+  if (category === 'consulting') {
+    const price = consultingDuration ? CONSULTING_PRICES[consultingDuration] : undefined;
+    if (price === undefined) return null;
+    return { deposit: price, total: price };
+  }
+
+  return null;
+}
+
+// ===========================================
 // BOOKING CREATION
 // ===========================================
 
@@ -352,8 +430,6 @@ interface BookingCreateRequest {
     recordingDetails?: string;
   };
   sourceId: string;
-  depositAmount: number;
-  totalAmount: number;
 }
 
 /**
@@ -369,13 +445,12 @@ router.post(
         hours,
         mixingTier,
         mixingDelivery,
+        consultingDuration,
         promoId,
         beatId,
         startAt,
         customer,
         sourceId,
-        depositAmount,
-        totalAmount,
       } = req.body as BookingCreateRequest;
 
       // Validate required fields
@@ -388,6 +463,25 @@ router.post(
         res.status(400).json({ message: 'Payment source is required' });
         return;
       }
+
+      // Price is always computed server-side from the booking inputs -
+      // never trust a client-submitted amount for what gets charged.
+      const pricing = await calculateBookingPrice({
+        category,
+        hours,
+        mixingTier,
+        mixingDelivery,
+        consultingDuration,
+        promoId,
+      });
+
+      if (!pricing) {
+        res.status(400).json({ message: 'Invalid booking selection - could not determine price' });
+        return;
+      }
+
+      const depositAmount = pricing.deposit;
+      const totalAmount = pricing.total;
 
       // Generate booking number
       const bookingNumber = await generateBookingNumber();
@@ -543,7 +637,6 @@ async function sendBookingConfirmationEmail(booking: BookingForEmail): Promise<v
   }
 
   const mailOptions = {
-    from: config.email.user,
     to: booking.email,
     subject: `Booking Confirmed! #${booking.bookingNumber} - Doc Rolds Studio`,
     html: `
@@ -661,7 +754,7 @@ async function sendBookingConfirmationEmail(booking: BookingForEmail): Promise<v
   };
 
   try {
-    await emailTransporter.sendMail(mailOptions);
+    await sendEmail(mailOptions);
     console.log('[BOOKINGS] Confirmation email sent to:', booking.email);
 
     // Update booking record
@@ -1013,7 +1106,6 @@ async function sendRescheduleEmail(
     : 'Unknown';
 
   const mailOptions = {
-    from: config.email.user,
     to: booking.email,
     subject: `Booking Rescheduled - #${booking.bookingNumber} - Doc Rolds Studio`,
     html: `
@@ -1056,7 +1148,7 @@ async function sendRescheduleEmail(
   };
 
   try {
-    await emailTransporter.sendMail(mailOptions);
+    await sendEmail(mailOptions);
     console.log('[BOOKINGS] Reschedule email sent to:', booking.email);
   } catch (error) {
     console.error('[BOOKINGS] Failed to send reschedule email:', (error as Error).message);
@@ -1085,7 +1177,6 @@ async function sendAdminNotificationEmail(booking: BookingForEmail): Promise<voi
   const adminEmail = config.email.user; // Send to the same email that sends
 
   const mailOptions = {
-    from: config.email.user,
     to: adminEmail,
     subject: `🎵 New Booking! #${booking.bookingNumber} - ${escapeHtml(booking.name)}`,
     html: `
@@ -1165,7 +1256,7 @@ async function sendAdminNotificationEmail(booking: BookingForEmail): Promise<voi
   };
 
   try {
-    await emailTransporter.sendMail(mailOptions);
+    await sendEmail(mailOptions);
     console.log('[BOOKINGS] Admin notification email sent');
   } catch (error) {
     console.error('[BOOKINGS] Failed to send admin notification:', (error as Error).message);

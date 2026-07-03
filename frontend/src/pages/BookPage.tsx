@@ -593,9 +593,9 @@ export default function BookPage(): ReactNode {
         beatId: selectedBeat?.id,
         startAt: selectedTime,
         customer: formData,
-        sourceId: tokenResult.token,
-        depositAmount: payment.deposit,
-        totalAmount: payment.total
+        sourceId: tokenResult.token
+        // Note: price is computed server-side from the fields above -
+        // the amount actually charged never comes from the client.
       };
 
       const res = await fetch(`${API_URL}/bookings/create`, {
