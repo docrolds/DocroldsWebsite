@@ -692,4 +692,173 @@ router.delete(
   })
 );
 
+// ===========================================
+// PROMO MANAGEMENT (admin)
+// ===========================================
+// Public listing of active promos lives at GET /api/bookings/promos
+// (bookings.ts) - these routes are the admin CRUD surface.
+
+interface PromoRequestBody {
+  name: string;
+  description?: string | null;
+  price: number;
+  originalValue: number;
+  includesSession?: boolean;
+  sessionHours?: number | null;
+  includesBeat?: boolean;
+  beatLicenseType?: string | null;
+  includesMixing?: boolean;
+  mixingTier?: string | null;
+  active?: boolean;
+  validFrom?: string | null;
+  validUntil?: string | null;
+}
+
+interface PromoPatchBody extends Partial<PromoRequestBody> {}
+
+function shapePromo(promo: {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  originalValue: number;
+  includesSession: boolean;
+  sessionHours: number | null;
+  includesBeat: boolean;
+  beatLicenseType: string | null;
+  includesMixing: boolean;
+  mixingTier: string | null;
+  active: boolean;
+  validFrom: Date | null;
+  validUntil: Date | null;
+  createdAt: Date;
+  _count?: { bookings: number };
+}) {
+  const savings = promo.originalValue - promo.price;
+  return {
+    ...promo,
+    bookingsCount: promo._count?.bookings ?? 0,
+    savings,
+    savingsPercent: promo.originalValue > 0 ? Math.round((savings / promo.originalValue) * 100) : 0,
+  };
+}
+
+/**
+ * GET /api/admin/promos
+ * List all promos, including inactive ones (unlike the public listing).
+ */
+router.get(
+  '/admin/promos',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
+    const promos = await prisma.promo.findMany({
+      include: { _count: { select: { bookings: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json(promos.map(shapePromo));
+  })
+);
+
+/**
+ * POST /api/admin/promos
+ * Create a new promo.
+ */
+router.post(
+  '/admin/promos',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const body = req.body as PromoRequestBody;
+
+    if (!body.name || body.price === undefined || body.originalValue === undefined) {
+      throw new BadRequestError('name, price, and originalValue are required');
+    }
+
+    const promo = await prisma.promo.create({
+      data: {
+        name: body.name,
+        description: body.description ?? null,
+        price: body.price,
+        originalValue: body.originalValue,
+        includesSession: body.includesSession ?? true,
+        sessionHours: body.sessionHours ?? null,
+        includesBeat: body.includesBeat ?? false,
+        beatLicenseType: body.beatLicenseType ?? null,
+        includesMixing: body.includesMixing ?? false,
+        mixingTier: body.mixingTier ?? null,
+        active: body.active ?? true,
+        validFrom: body.validFrom ? new Date(body.validFrom) : null,
+        validUntil: body.validUntil ? new Date(body.validUntil) : null,
+      },
+      include: { _count: { select: { bookings: true } } },
+    });
+
+    res.status(201).json(shapePromo(promo));
+  })
+);
+
+/**
+ * PATCH /api/admin/promos/:id
+ * Update a promo (partial - e.g. just toggling `active`).
+ */
+router.patch(
+  '/admin/promos/:id',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
+    const body = req.body as PromoPatchBody;
+
+    const existing = await prisma.promo.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundError('Promo not found');
+    }
+
+    const data: Prisma.PromoUpdateInput = {};
+    if (body.name !== undefined) data.name = body.name;
+    if (body.description !== undefined) data.description = body.description;
+    if (body.price !== undefined) data.price = body.price;
+    if (body.originalValue !== undefined) data.originalValue = body.originalValue;
+    if (body.includesSession !== undefined) data.includesSession = body.includesSession;
+    if (body.sessionHours !== undefined) data.sessionHours = body.sessionHours;
+    if (body.includesBeat !== undefined) data.includesBeat = body.includesBeat;
+    if (body.beatLicenseType !== undefined) data.beatLicenseType = body.beatLicenseType;
+    if (body.includesMixing !== undefined) data.includesMixing = body.includesMixing;
+    if (body.mixingTier !== undefined) data.mixingTier = body.mixingTier;
+    if (body.active !== undefined) data.active = body.active;
+    if (body.validFrom !== undefined) data.validFrom = body.validFrom ? new Date(body.validFrom) : null;
+    if (body.validUntil !== undefined) data.validUntil = body.validUntil ? new Date(body.validUntil) : null;
+
+    const promo = await prisma.promo.update({
+      where: { id },
+      data,
+      include: { _count: { select: { bookings: true } } },
+    });
+
+    res.json(shapePromo(promo));
+  })
+);
+
+/**
+ * DELETE /api/admin/promos/:id
+ */
+router.delete(
+  '/admin/promos/:id',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
+
+    const existing = await prisma.promo.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundError('Promo not found');
+    }
+
+    await prisma.promo.delete({ where: { id } });
+    res.json({ success: true });
+  })
+);
+
 export default router;

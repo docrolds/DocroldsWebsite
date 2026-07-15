@@ -290,7 +290,7 @@ export default function AdminDashboard(): JSX.Element | null {
         fetch(`${API_URL}/beats`, { headers }),
         fetch(`${API_URL}/photos?category=team`, { headers }),
         fetch(`${API_URL}/users`, { headers }),
-        fetch(`${API_URL}/admin/customers`, { headers }),
+        fetch(`${API_URL}/customers/admin/list`, { headers }),
         fetch(`${API_URL}/admin/orders`, { headers }),
         fetch(`${API_URL}/admin/bookings`, { headers }),
         fetch(`${API_URL}/admin/promos`, { headers })
@@ -409,7 +409,7 @@ export default function AdminDashboard(): JSX.Element | null {
 
   const impersonateCustomer = async (customerId: string): Promise<void> => {
     try {
-      const res = await fetch(`${API_URL}/admin/customers/${customerId}/impersonate`, {
+      const res = await fetch(`${API_URL}/customers/admin/${customerId}/impersonate`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -494,7 +494,7 @@ export default function AdminDashboard(): JSX.Element | null {
   const deleteCustomer = async (id: string): Promise<void> => {
     if (!confirm('Are you sure you want to delete this customer? This will also delete all their orders, comments, likes, and playlists. This action cannot be undone.')) return;
     try {
-      const res = await fetch(`${API_URL}/admin/customers/${id}`, {
+      const res = await fetch(`${API_URL}/customers/admin/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -1965,7 +1965,7 @@ function AdminModal({ type, item, onClose, onSave, token }: AdminModalProps): JS
         endpoint = userItem ? `${API_URL}/users/${userItem.id}` : `${API_URL}/users`;
       } else if (type === 'customer') {
         const customerItem = item as Customer;
-        endpoint = `${API_URL}/admin/customers/${customerItem.id}`;
+        endpoint = `${API_URL}/customers/admin/${customerItem.id}`;
         method = 'PUT';
       } else if (type === 'order-edit') {
         const orderItem = item as Order;
