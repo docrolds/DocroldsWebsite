@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './App.css';
 import { CartProvider } from './context/CartContext';
 import { CustomerAuthProvider } from './context/CustomerAuthContext';
-import { AdminAuthProvider } from './context/AdminAuthContext';
+import { AdminAuthProvider, useAdminAuth } from './context/AdminAuthContext';
 import { AudioPlayerProvider } from './context/AudioPlayerContext';
 import { NotificationProvider } from './context/NotificationContext';
 import Navigation from './components/Navigation';
@@ -43,6 +43,23 @@ function NotFoundPage() {
   );
 }
 
+// Single entry point for /admin/*: shows the login form while logged out
+// and the dashboard once authenticated, so there's one URL to bookmark
+// instead of a separate /admin/login page redirecting back and forth.
+function AdminGate() {
+  const { isAuthenticated, loading } = useAdminAuth();
+
+  if (loading) {
+    return (
+      <div className="admin-loading">
+        <div className="admin-spinner"></div>
+      </div>
+    );
+  }
+
+  return isAuthenticated ? <AdminDashboard /> : <AdminLoginPage />;
+}
+
 function App() {
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith('/admin');
@@ -80,8 +97,8 @@ function App() {
         <AdminAuthProvider>
           <Toaster />
           <Routes>
-            <Route path="/admin/login" element={<AdminLoginPage />} />
-            <Route path="/admin/*" element={<AdminDashboard />} />
+            <Route path="/admin/login" element={<Navigate to="/admin" replace />} />
+            <Route path="/admin/*" element={<AdminGate />} />
           </Routes>
         </AdminAuthProvider>
       </ErrorBoundary>

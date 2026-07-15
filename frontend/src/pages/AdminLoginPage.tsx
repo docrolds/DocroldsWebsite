@@ -1,25 +1,15 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { useAdminAuth } from '../context/AdminAuthContext';
 
+// Rendered by AdminGate (App.tsx) while logged out; AdminGate itself swaps
+// to AdminDashboard once isAuthenticated flips true, so no navigation is
+// needed here on success.
 export default function AdminLoginPage(): JSX.Element | null {
-  const navigate = useNavigate();
-  const { login, isAuthenticated } = useAdminAuth();
+  const { login } = useAdminAuth();
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
-
-  // Redirect if already logged in
-  useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/admin');
-    }
-  }, [isAuthenticated, navigate]);
-
-  if (isAuthenticated) {
-    return null;
-  }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
@@ -28,7 +18,6 @@ export default function AdminLoginPage(): JSX.Element | null {
 
     try {
       await login(username, password);
-      navigate('/admin');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed';
       setError(message);

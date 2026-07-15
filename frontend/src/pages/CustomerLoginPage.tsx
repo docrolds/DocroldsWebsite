@@ -8,12 +8,6 @@ import { API_URL } from '../config';
 interface UnifiedLoginResponse {
   token: string;
   role: 'admin' | 'customer';
-  user?: {
-    id: string;
-    username: string;
-    email: string;
-    role: string;
-  };
   customer?: Customer;
   message?: string;
 }
@@ -49,17 +43,14 @@ export default function CustomerLoginPage(): JSX.Element {
         throw new Error(data.message || 'Login failed');
       }
 
-      // Handle based on role returned
-      if (data.role === 'admin' && data.user) {
-        // Admin login - store directly to localStorage since we're outside AdminAuthProvider
-        // The AdminAuthProvider will pick these up when we navigate to /admin
-        localStorage.setItem('adminToken', data.token);
-        localStorage.setItem('adminUser', JSON.stringify(data.user));
-        toast.success('Welcome back!', `Logged in as ${data.user.username}`);
-        // Redirect to React admin dashboard
-        window.location.href = '/admin';
-      } else if (data.customer) {
-        // Customer login - store customer credentials and redirect to customer area
+      // This page only handles customer accounts - admin login lives solely
+      // at /admin, which has its own dedicated form (plain username field,
+      // not constrained to email format like this one).
+      if (data.role === 'admin') {
+        throw new Error('This is the customer sign-in. Admins should use the admin portal at /admin.');
+      }
+
+      if (data.customer) {
         customerLoginWithToken(data.token, data.customer);
         toast.success('Welcome back!', data.customer.firstName ? `Good to see you, ${data.customer.firstName}` : 'Login successful');
         navigate(returnTo);

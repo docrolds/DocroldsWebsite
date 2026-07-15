@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, ChangeEvent, FormEvent, MouseEvent } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { API_URL } from '../config';
 
@@ -207,7 +207,6 @@ interface AdminModalProps {
 // ============================================
 
 export default function AdminDashboard(): JSX.Element | null {
-  const navigate = useNavigate();
   const { admin, token, loading: authLoading, isAuthenticated, logout } = useAdminAuth();
   const [activeSection, setActiveSection] = useState<string>('overview');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
@@ -267,11 +266,8 @@ export default function AdminDashboard(): JSX.Element | null {
   // Note: audioProgress kept for future progress bar implementation
   const [_audioProgress, setAudioProgress] = useState<number>(0);
 
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      navigate('/admin/login');
-    }
-  }, [authLoading, isAuthenticated, navigate]);
+  // No redirect needed on logout/expiry - AdminGate (App.tsx) swaps to the
+  // login form automatically once isAuthenticated flips false.
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -346,7 +342,8 @@ export default function AdminDashboard(): JSX.Element | null {
 
   const handleLogout = (): void => {
     logout();
-    navigate('/admin/login');
+    // AdminGate (App.tsx) swaps to the login form automatically once
+    // isAuthenticated flips false - no navigation needed.
   };
 
   // Audio player functions
