@@ -736,6 +736,141 @@ router.get(
   })
 );
 
+/**
+ * GET /api/admin/orders
+ * List all orders for the admin dashboard.
+ */
+router.get(
+  '/admin/orders',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
+    const orders = await prisma.order.findMany({
+      include: {
+        customer: {
+          select: { email: true },
+        },
+        items: {
+          include: {
+            beat: {
+              select: { id: true, title: true },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json(
+      orders.map((order) => ({
+        id: order.id,
+        orderNumber: order.orderNumber,
+        customerId: order.customerId,
+        customerEmail: order.customer.email,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        totalAmount: order.total,
+        downloadToken: order.downloadToken,
+        downloadExpiresAt: order.downloadExpiresAt,
+        notes: order.notes,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        items: order.items,
+      }))
+    );
+  })
+);
+
+/**
+ * POST /api/admin/orders/:id/resend-email
+ * Resend the download confirmation email for a completed order.
+ */
+router.post(
+  '/admin/orders/:id/resend-email',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const orderId = req.params.id as string;
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { customer: true, items: { include: { beat: true } } },
+    });
+
+    if (!order) {
+      throw new NotFoundError('Order not found');
+    }
+
+    await sendDownloadEmail(order as OrderWithRelations);
+    res.json({ success: true, message: 'Email resent' });
+  })
+);
+
+interface AdminUpdateOrderRequest {
+  extendDownload?: boolean;
+  notes?: string;
+}
+
+/**
+ * PUT /api/admin/orders/:id
+ * Update admin-editable fields on an order - currently supports extending
+ * the guest download window by another DOWNLOAD_LINK_EXPIRY_DAYS, and
+ * updating admin notes.
+ */
+router.put(
+  '/admin/orders/:id',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const orderId = req.params.id as string;
+    const { extendDownload, notes } = req.body as AdminUpdateOrderRequest;
+
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) {
+      throw new NotFoundError('Order not found');
+    }
+
+    const data: Prisma.OrderUpdateInput = {};
+
+    if (extendDownload) {
+      const base = order.downloadExpiresAt && order.downloadExpiresAt > new Date()
+        ? order.downloadExpiresAt
+        : new Date();
+      data.downloadExpiresAt = new Date(
+        base.getTime() + config.downloadLinkExpiryDays * 24 * 60 * 60 * 1000
+      );
+    }
+
+    if (notes !== undefined) {
+      data.notes = notes;
+    }
+
+    const updated = await prisma.order.update({ where: { id: orderId }, data });
+    res.json(updated);
+  })
+);
+
+/**
+ * DELETE /api/admin/orders/:id
+ * Permanently delete an order and its items (cascade).
+ */
+router.delete(
+  '/admin/orders/:id',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const orderId = req.params.id as string;
+
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) {
+      throw new NotFoundError('Order not found');
+    }
+
+    await prisma.order.delete({ where: { id: orderId } });
+    res.json({ success: true });
+  })
+);
+
 interface RefundOrderRequest {
   reason?: string;
 }
