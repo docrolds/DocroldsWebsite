@@ -35,12 +35,30 @@ export interface SendEmailOptions {
  */
 export async function sendEmail({ to, subject, html }: SendEmailOptions): Promise<void> {
   if (config.sendgrid.apiKey) {
-    await sgMail.send({
-      to,
-      from: { email: config.sendgrid.fromEmail, name: config.sendgrid.fromName },
-      subject,
-      html,
-    });
+    try {
+      await sgMail.send({
+        to,
+        from: { email: config.sendgrid.fromEmail, name: config.sendgrid.fromName },
+        subject,
+        html,
+      });
+    } catch (error) {
+      // The top-level error.message from @sendgrid/mail is often just a
+      // generic HTTP status string (e.g. "Unauthorized") - the actually
+      // useful reason lives in the response body. Surface it so callers'
+      // error logs are actionable instead of just "Unauthorized".
+      const sgError = error as {
+        message?: string;
+        response?: { body?: { errors?: Array<{ message?: string; field?: string; help?: string }> } };
+      };
+      const details = sgError.response?.body?.errors
+        ?.map((e) => e.message)
+        .filter(Boolean)
+        .join('; ');
+      throw new Error(
+        details ? `SendGrid: ${details}` : `SendGrid: ${sgError.message || 'unknown error'}`
+      );
+    }
     return;
   }
 
