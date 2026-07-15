@@ -53,3 +53,9 @@ export {
   assertOrThrow,
   assertExists,
 } from './errorHandler';
+
+// ===========================================
+// RATE LIMITING MIDDLEWARE
+// ===========================================
+
+export { authLimiter, paymentLimiter } from './rateLimit';

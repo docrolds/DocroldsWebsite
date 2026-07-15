@@ -5,6 +5,8 @@ node_modules/
 data.json
 uploads/
 .DS_Store
+nul
+backup.sql
 
 # Keep example files tracked
 !.env.example

@@ -16,10 +16,20 @@ import multer from 'multer';
 import sharp from 'sharp';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { config } from '../config/env';
+import { sendEmail } from '../services/email';
+import { captureError } from '../services/sentry';
 import {
   authenticateToken,
   requireAdmin,
   authenticateCustomer,
+  authLimiter,
+} from '../middleware';
+import {
+  asyncHandler,
+  BadRequestError,
+  UnauthorizedError,
+  ForbiddenError,
+  NotFoundError,
 } from '../middleware';
 import type {
   AuthenticatedCustomerRequest,
@@ -31,7 +41,6 @@ import type {
   PasswordChangeRequest,
   BlockCustomerRequest,
   ImpersonateCustomerResponse,
-  ErrorResponse,
 } from '../types';
 
 const router = Router();
@@ -122,12 +131,36 @@ async function createNotification(
 
 /**
  * Send welcome email to new customer
- * Note: This is a placeholder - implement actual email sending in production
  */
 async function sendWelcomeEmail(customer: { email: string; firstName?: string | null }): Promise<void> {
   const firstName = customer.firstName || 'there';
-  console.log(`[EMAIL] Sending welcome email to ${customer.email} (${firstName})`);
-  // TODO: Implement actual email sending with SendGrid or nodemailer
+  try {
+    await sendEmail({
+      to: customer.email,
+      subject: 'Welcome to Doc Rolds',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #fff; padding: 30px;">
+          <h1 style="color: #E83628; text-align: center;">Welcome to Doc Rolds, ${firstName}!</h1>
+          <p style="color: #ccc; font-size: 14px; line-height: 1.6;">
+            Your account has been created. You can now browse beats, manage your orders, and book studio sessions from your dashboard.
+          </p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${config.frontendUrl}" style="background: #E83628; color: #fff; padding: 15px 40px; text-decoration: none; border-radius: 5px; font-size: 16px; display: inline-block;">
+              Visit Doc Rolds
+            </a>
+          </div>
+          <hr style="border: none; border-top: 1px solid #333; margin: 30px 0;">
+          <p style="color: #999; font-size: 12px; text-align: center;">
+            Doc Rolds Music - <a href="${config.frontendUrl}" style="color: #E83628;">docrolds.com</a>
+          </p>
+        </div>
+      `,
+    });
+    console.log(`[EMAIL] Welcome email sent to ${customer.email}`);
+  } catch (error) {
+    console.error('[EMAIL] Failed to send welcome email:', (error as Error).message);
+    captureError(error, { email: customer.email, context: 'welcome-email' });
+  }
 }
 
 // ===========================================
@@ -138,24 +171,23 @@ async function sendWelcomeEmail(customer: { email: string; firstName?: string | 
  * POST /api/customers/register
  * Register a new customer or upgrade a guest to a full account
  */
-router.post('/register', async (req: Request, res: Response): Promise<void> => {
-  try {
+router.post(
+  '/register',
+  authLimiter,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { email, password, firstName, lastName, stageName, phone } =
       req.body as CustomerRegisterRequest & { phone?: string };
 
     if (!email || !password) {
-      res.status(400).json({ message: 'Email and password are required' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Email and password are required');
     }
 
     if (!isValidEmail(email)) {
-      res.status(400).json({ message: 'Invalid email format' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Invalid email format');
     }
 
     if (password.length < 6) {
-      res.status(400).json({ message: 'Password must be at least 6 characters' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Password must be at least 6 characters');
     }
 
     // Check if customer exists
@@ -164,11 +196,10 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     });
 
     if (existingCustomer && !existingCustomer.isGuest) {
-      res.status(400).json({ message: 'Email already registered' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Email already registered');
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     let customer;
     if (existingCustomer) {
@@ -244,23 +275,21 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
         stageName: customer.stageName,
       },
     } as CustomerLoginResponse);
-  } catch (error) {
-    console.error('[REGISTER] Error:', error);
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * POST /api/customers/login
  * Authenticate a customer and return a JWT token
  */
-router.post('/login', async (req: Request, res: Response): Promise<void> => {
-  try {
+router.post(
+  '/login',
+  authLimiter,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { email, password } = req.body as CustomerLoginRequest;
 
     if (!email || !password) {
-      res.status(400).json({ message: 'Email and password are required' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Email and password are required');
     }
 
     const customer = await prisma.customer.findUnique({
@@ -268,22 +297,19 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     });
 
     if (!customer || customer.isGuest || !customer.password) {
-      res.status(401).json({ message: 'Invalid credentials' } as ErrorResponse);
-      return;
+      throw new UnauthorizedError('Invalid credentials');
     }
 
     if (customer.isBlocked) {
-      res.status(403).json({
-        message: customer.blockedReason || 'Your account has been blocked. Please contact support.',
-      } as ErrorResponse);
-      return;
+      throw new ForbiddenError(
+        customer.blockedReason || 'Your account has been blocked. Please contact support.'
+      );
     }
 
     const validPassword = await bcrypt.compare(password, customer.password);
 
     if (!validPassword) {
-      res.status(401).json({ message: 'Invalid credentials' } as ErrorResponse);
-      return;
+      throw new UnauthorizedError('Invalid credentials');
     }
 
     const token = jwt.sign(
@@ -303,10 +329,8 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         profilePicture: customer.profilePicture,
       },
     } as CustomerLoginResponse);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 // ===========================================
 // CUSTOMER PROFILE MANAGEMENT
@@ -316,8 +340,10 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
  * GET /api/customers/me
  * Get the current authenticated customer's profile
  */
-router.get('/me', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/me',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const customer = await prisma.customer.findUnique({
       where: { id: authReq.customer.id },
@@ -339,22 +365,21 @@ router.get('/me', authenticateCustomer, async (req: Request, res: Response): Pro
     });
 
     if (!customer) {
-      res.status(404).json({ message: 'Customer not found' } as ErrorResponse);
-      return;
+      throw new NotFoundError('Customer not found');
     }
 
     res.json(customer);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * PUT /api/customers/me
  * Update the current authenticated customer's profile
  */
-router.put('/me', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.put(
+  '/me',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const {
       firstName,
@@ -377,8 +402,7 @@ router.put('/me', authenticateCustomer, async (req: Request, res: Response): Pro
         },
       });
       if (existing) {
-        res.status(400).json({ message: 'Username already taken' } as ErrorResponse);
-        return;
+        throw new BadRequestError('Username already taken');
       }
     }
 
@@ -412,10 +436,8 @@ router.put('/me', authenticateCustomer, async (req: Request, res: Response): Pro
     });
 
     res.json(customer);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * POST /api/customers/me/profile-picture
@@ -425,46 +447,41 @@ router.post(
   '/me/profile-picture',
   authenticateCustomer,
   upload.single('profilePicture'),
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const authReq = req as AuthenticatedCustomerRequest;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const authReq = req as AuthenticatedCustomerRequest;
 
-      if (!req.file) {
-        res.status(400).json({ message: 'No file uploaded' } as ErrorResponse);
-        return;
-      }
-
-      const photoData = await processPhotoToBase64(req.file.buffer);
-
-      const customer = await prisma.customer.update({
-        where: { id: authReq.customer.id },
-        data: { profilePicture: photoData },
-      });
-
-      res.json({ profilePicture: customer.profilePicture });
-    } catch (error) {
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
+    if (!req.file) {
+      throw new BadRequestError('No file uploaded');
     }
-  }
+
+    const photoData = await processPhotoToBase64(req.file.buffer);
+
+    const customer = await prisma.customer.update({
+      where: { id: authReq.customer.id },
+      data: { profilePicture: photoData },
+    });
+
+    res.json({ profilePicture: customer.profilePicture });
+  })
 );
 
 /**
  * PUT /api/customers/me/password
  * Change the password for the current authenticated customer
  */
-router.put('/me/password', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.put(
+  '/me/password',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const { currentPassword, newPassword } = req.body as PasswordChangeRequest;
 
     if (!currentPassword || !newPassword) {
-      res.status(400).json({ message: 'Current and new password required' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Current and new password required');
     }
 
     if (newPassword.length < 6) {
-      res.status(400).json({ message: 'Password must be at least 6 characters' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Password must be at least 6 characters');
     }
 
     const customer = await prisma.customer.findUnique({
@@ -472,27 +489,23 @@ router.put('/me/password', authenticateCustomer, async (req: Request, res: Respo
     });
 
     if (!customer || !customer.password) {
-      res.status(404).json({ message: 'Customer not found' } as ErrorResponse);
-      return;
+      throw new NotFoundError('Customer not found');
     }
 
     const validPassword = await bcrypt.compare(currentPassword, customer.password);
     if (!validPassword) {
-      res.status(401).json({ message: 'Current password is incorrect' } as ErrorResponse);
-      return;
+      throw new UnauthorizedError('Current password is incorrect');
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
     await prisma.customer.update({
       where: { id: authReq.customer.id },
       data: { password: hashedPassword },
     });
 
     res.json({ message: 'Password updated successfully' });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 // ===========================================
 // CUSTOMER ORDERS & DOWNLOADS
@@ -502,8 +515,10 @@ router.put('/me/password', authenticateCustomer, async (req: Request, res: Respo
  * GET /api/customers/me/orders
  * Get all orders for the current authenticated customer
  */
-router.get('/me/orders', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/me/orders',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const orders = await prisma.order.findMany({
       where: { customerId: authReq.customer.id },
@@ -525,17 +540,17 @@ router.get('/me/orders', authenticateCustomer, async (req: Request, res: Respons
     });
 
     res.json(orders);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * GET /api/customers/me/downloads
  * Get all downloadable beats for the current authenticated customer
  */
-router.get('/me/downloads', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/me/downloads',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const orders = await prisma.order.findMany({
       where: {
@@ -565,10 +580,8 @@ router.get('/me/downloads', authenticateCustomer, async (req: Request, res: Resp
     );
 
     res.json(downloads);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 // ===========================================
 // CUSTOMER LIKES
@@ -578,8 +591,10 @@ router.get('/me/downloads', authenticateCustomer, async (req: Request, res: Resp
  * GET /api/customers/me/likes
  * Get all beats liked by the current authenticated customer
  */
-router.get('/me/likes', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/me/likes',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const likes = await prisma.beatLike.findMany({
       where: { customerId: authReq.customer.id },
@@ -590,10 +605,8 @@ router.get('/me/likes', authenticateCustomer, async (req: Request, res: Response
     });
 
     res.json(likes.map((l) => l.beat));
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 // ===========================================
 // CUSTOMER PLAYLISTS
@@ -603,8 +616,10 @@ router.get('/me/likes', authenticateCustomer, async (req: Request, res: Response
  * GET /api/customers/me/playlists
  * Get all playlists for the current authenticated customer
  */
-router.get('/me/playlists', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/me/playlists',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const playlists = await prisma.playlist.findMany({
       where: { customerId: authReq.customer.id },
@@ -618,23 +633,22 @@ router.get('/me/playlists', authenticateCustomer, async (req: Request, res: Resp
     });
 
     res.json(playlists);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * POST /api/customers/me/playlists
  * Create a new playlist for the current authenticated customer
  */
-router.post('/me/playlists', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.post(
+  '/me/playlists',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const { name } = req.body as { name: string };
 
     if (!name || name.trim().length === 0) {
-      res.status(400).json({ message: 'Playlist name is required' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Playlist name is required');
     }
 
     const playlist = await prisma.playlist.create({
@@ -645,10 +659,8 @@ router.post('/me/playlists', authenticateCustomer, async (req: Request, res: Res
     });
 
     res.status(201).json(playlist);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 // ===========================================
 // CUSTOMER NOTIFICATIONS
@@ -658,8 +670,10 @@ router.post('/me/playlists', authenticateCustomer, async (req: Request, res: Res
  * GET /api/customers/me/notifications
  * Get notifications for the current authenticated customer
  */
-router.get('/me/notifications', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/me/notifications',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const { limit = '20', unreadOnly = 'false', offset = '0' } = req.query as {
       limit?: string;
@@ -683,11 +697,8 @@ router.get('/me/notifications', authenticateCustomer, async (req: Request, res: 
     });
 
     res.json(notifications);
-  } catch (error) {
-    console.error('[NOTIFICATION] Error fetching notifications:', (error as Error).message);
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * GET /api/customers/me/notifications/unread-count
@@ -696,22 +707,17 @@ router.get('/me/notifications', authenticateCustomer, async (req: Request, res: 
 router.get(
   '/me/notifications/unread-count',
   authenticateCustomer,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const authReq = req as AuthenticatedCustomerRequest;
-      const count = await prisma.notification.count({
-        where: {
-          customerId: authReq.customer.id,
-          isRead: false,
-        },
-      });
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const authReq = req as AuthenticatedCustomerRequest;
+    const count = await prisma.notification.count({
+      where: {
+        customerId: authReq.customer.id,
+        isRead: false,
+      },
+    });
 
-      res.json({ count });
-    } catch (error) {
-      console.error('[NOTIFICATION] Error counting notifications:', (error as Error).message);
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-    }
-  }
+    res.json({ count });
+  })
 );
 
 /**
@@ -721,36 +727,30 @@ router.get(
 router.put(
   '/me/notifications/:id/read',
   authenticateCustomer,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const authReq = req as AuthenticatedCustomerRequest;
-      const notificationId = parseQueryString(req.params.id);
-      const notification = await prisma.notification.findFirst({
-        where: {
-          id: notificationId,
-          customerId: authReq.customer.id,
-        },
-      });
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const authReq = req as AuthenticatedCustomerRequest;
+    const notificationId = parseQueryString(req.params.id);
+    const notification = await prisma.notification.findFirst({
+      where: {
+        id: notificationId,
+        customerId: authReq.customer.id,
+      },
+    });
 
-      if (!notification) {
-        res.status(404).json({ message: 'Notification not found' } as ErrorResponse);
-        return;
-      }
-
-      const updated = await prisma.notification.update({
-        where: { id: notificationId },
-        data: {
-          isRead: true,
-          readAt: new Date(),
-        },
-      });
-
-      res.json(updated);
-    } catch (error) {
-      console.error('[NOTIFICATION] Error marking as read:', (error as Error).message);
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
+    if (!notification) {
+      throw new NotFoundError('Notification not found');
     }
-  }
+
+    const updated = await prisma.notification.update({
+      where: { id: notificationId },
+      data: {
+        isRead: true,
+        readAt: new Date(),
+      },
+    });
+
+    res.json(updated);
+  })
 );
 
 /**
@@ -760,26 +760,21 @@ router.put(
 router.put(
   '/me/notifications/read-all',
   authenticateCustomer,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const authReq = req as AuthenticatedCustomerRequest;
-      const result = await prisma.notification.updateMany({
-        where: {
-          customerId: authReq.customer.id,
-          isRead: false,
-        },
-        data: {
-          isRead: true,
-          readAt: new Date(),
-        },
-      });
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const authReq = req as AuthenticatedCustomerRequest;
+    const result = await prisma.notification.updateMany({
+      where: {
+        customerId: authReq.customer.id,
+        isRead: false,
+      },
+      data: {
+        isRead: true,
+        readAt: new Date(),
+      },
+    });
 
-      res.json({ message: 'All notifications marked as read', count: result.count });
-    } catch (error) {
-      console.error('[NOTIFICATION] Error marking all as read:', (error as Error).message);
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-    }
-  }
+    res.json({ message: 'All notifications marked as read', count: result.count });
+  })
 );
 
 /**
@@ -789,32 +784,26 @@ router.put(
 router.delete(
   '/me/notifications/:id',
   authenticateCustomer,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const authReq = req as AuthenticatedCustomerRequest;
-      const notificationId = parseQueryString(req.params.id);
-      const notification = await prisma.notification.findFirst({
-        where: {
-          id: notificationId,
-          customerId: authReq.customer.id,
-        },
-      });
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const authReq = req as AuthenticatedCustomerRequest;
+    const notificationId = parseQueryString(req.params.id);
+    const notification = await prisma.notification.findFirst({
+      where: {
+        id: notificationId,
+        customerId: authReq.customer.id,
+      },
+    });
 
-      if (!notification) {
-        res.status(404).json({ message: 'Notification not found' } as ErrorResponse);
-        return;
-      }
-
-      await prisma.notification.delete({
-        where: { id: notificationId },
-      });
-
-      res.json({ message: 'Notification deleted' });
-    } catch (error) {
-      console.error('[NOTIFICATION] Error deleting notification:', (error as Error).message);
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
+    if (!notification) {
+      throw new NotFoundError('Notification not found');
     }
-  }
+
+    await prisma.notification.delete({
+      where: { id: notificationId },
+    });
+
+    res.json({ message: 'Notification deleted' });
+  })
 );
 
 // ===========================================
@@ -829,33 +818,29 @@ router.get(
   '/admin/list',
   authenticateToken,
   requireAdmin,
-  async (_req: Request, res: Response): Promise<void> => {
-    try {
-      const customers = await prisma.customer.findMany({
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          stageName: true,
-          phone: true,
-          isGuest: true,
-          isBlocked: true,
-          blockedAt: true,
-          blockedReason: true,
-          createdAt: true,
-          _count: {
-            select: { orders: true, comments: true },
-          },
+  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
+    const customers = await prisma.customer.findMany({
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        stageName: true,
+        phone: true,
+        isGuest: true,
+        isBlocked: true,
+        blockedAt: true,
+        blockedReason: true,
+        createdAt: true,
+        _count: {
+          select: { orders: true, comments: true },
         },
-        orderBy: { createdAt: 'desc' },
-      });
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
-      res.json(customers);
-    } catch (error) {
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-    }
-  }
+    res.json(customers);
+  })
 );
 
 /**
@@ -866,48 +851,43 @@ router.get(
   '/admin/:id',
   authenticateToken,
   requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const customerId = parseQueryString(req.params.id);
-      const customer = await prisma.customer.findUnique({
-        where: { id: customerId },
-        include: {
-          orders: {
-            include: {
-              items: {
-                include: { beat: true },
-              },
-            },
-            orderBy: { createdAt: 'desc' },
-          },
-          likes: {
-            include: { beat: true },
-            take: 20,
-          },
-          playlists: {
-            include: {
-              beats: { include: { beat: true } },
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const customerId = parseQueryString(req.params.id);
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId },
+      include: {
+        orders: {
+          include: {
+            items: {
+              include: { beat: true },
             },
           },
-          comments: {
-            include: { beat: true },
-            take: 20,
+          orderBy: { createdAt: 'desc' },
+        },
+        likes: {
+          include: { beat: true },
+          take: 20,
+        },
+        playlists: {
+          include: {
+            beats: { include: { beat: true } },
           },
         },
-      });
+        comments: {
+          include: { beat: true },
+          take: 20,
+        },
+      },
+    });
 
-      if (!customer) {
-        res.status(404).json({ message: 'Customer not found' } as ErrorResponse);
-        return;
-      }
-
-      // Remove password from response
-      const { password, ...customerData } = customer;
-      res.json(customerData);
-    } catch (error) {
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
+    if (!customer) {
+      throw new NotFoundError('Customer not found');
     }
-  }
+
+    // Remove password from response
+    const { password, ...customerData } = customer;
+    res.json(customerData);
+  })
 );
 
 /**
@@ -918,33 +898,29 @@ router.put(
   '/admin/:id',
   authenticateToken,
   requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const customerId = parseQueryString(req.params.id);
-      const { firstName, lastName, stageName, username, phone, profession, city, state, email } =
-        req.body as CustomerProfileUpdateRequest & { email?: string };
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const customerId = parseQueryString(req.params.id);
+    const { firstName, lastName, stageName, username, phone, profession, city, state, email } =
+      req.body as CustomerProfileUpdateRequest & { email?: string };
 
-      const customer = await prisma.customer.update({
-        where: { id: customerId },
-        data: {
-          firstName,
-          lastName,
-          stageName,
-          username,
-          phone,
-          profession,
-          city,
-          state,
-          email,
-        },
-      });
+    const customer = await prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        firstName,
+        lastName,
+        stageName,
+        username,
+        phone,
+        profession,
+        city,
+        state,
+        email,
+      },
+    });
 
-      const { password, ...customerData } = customer;
-      res.json(customerData);
-    } catch (error) {
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-    }
-  }
+    const { password, ...customerData } = customer;
+    res.json(customerData);
+  })
 );
 
 /**
@@ -955,28 +931,23 @@ router.post(
   '/admin/:id/reset-password',
   authenticateToken,
   requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const customerId = parseQueryString(req.params.id);
-      const { newPassword } = req.body as { newPassword: string };
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const customerId = parseQueryString(req.params.id);
+    const { newPassword } = req.body as { newPassword: string };
 
-      if (!newPassword || newPassword.length < 6) {
-        res.status(400).json({ message: 'Password must be at least 6 characters' } as ErrorResponse);
-        return;
-      }
-
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-      await prisma.customer.update({
-        where: { id: customerId },
-        data: { password: hashedPassword, isGuest: false },
-      });
-
-      res.json({ message: 'Password reset successfully' });
-    } catch (error) {
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
+    if (!newPassword || newPassword.length < 6) {
+      throw new BadRequestError('Password must be at least 6 characters');
     }
-  }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await prisma.customer.update({
+      where: { id: customerId },
+      data: { password: hashedPassword, isGuest: false },
+    });
+
+    res.json({ message: 'Password reset successfully' });
+  })
 );
 
 /**
@@ -987,82 +958,76 @@ router.delete(
   '/admin/:id',
   authenticateToken,
   requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const customerId = parseQueryString(req.params.id);
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const customerId = parseQueryString(req.params.id);
 
-      // Check if customer exists
-      const customer = await prisma.customer.findUnique({
-        where: { id: customerId },
-        include: {
-          _count: {
-            select: { orders: true },
-          },
+    // Check if customer exists
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId },
+      include: {
+        _count: {
+          select: { orders: true },
+        },
+      },
+    });
+
+    if (!customer) {
+      throw new NotFoundError('Customer not found');
+    }
+
+    // Use a transaction to delete all related records first
+    await prisma.$transaction(async (tx) => {
+      // Delete comment likes by this customer
+      await tx.commentLike.deleteMany({
+        where: { customerId },
+      });
+
+      // Delete comments by this customer
+      await tx.comment.deleteMany({
+        where: { customerId },
+      });
+
+      // Delete beat likes
+      await tx.beatLike.deleteMany({
+        where: { customerId },
+      });
+
+      // Delete playlist beats (through playlists)
+      await tx.playlistBeat.deleteMany({
+        where: {
+          playlist: { customerId },
         },
       });
 
-      if (!customer) {
-        res.status(404).json({ message: 'Customer not found' } as ErrorResponse);
-        return;
-      }
-
-      // Use a transaction to delete all related records first
-      await prisma.$transaction(async (tx) => {
-        // Delete comment likes by this customer
-        await tx.commentLike.deleteMany({
-          where: { customerId },
-        });
-
-        // Delete comments by this customer
-        await tx.comment.deleteMany({
-          where: { customerId },
-        });
-
-        // Delete beat likes
-        await tx.beatLike.deleteMany({
-          where: { customerId },
-        });
-
-        // Delete playlist beats (through playlists)
-        await tx.playlistBeat.deleteMany({
-          where: {
-            playlist: { customerId },
-          },
-        });
-
-        // Delete playlists
-        await tx.playlist.deleteMany({
-          where: { customerId },
-        });
-
-        // Delete notifications
-        await tx.notification.deleteMany({
-          where: { customerId },
-        });
-
-        // Delete order items first, then orders
-        await tx.orderItem.deleteMany({
-          where: {
-            order: { customerId },
-          },
-        });
-
-        await tx.order.deleteMany({
-          where: { customerId },
-        });
-
-        // Finally delete the customer
-        await tx.customer.delete({
-          where: { id: customerId },
-        });
+      // Delete playlists
+      await tx.playlist.deleteMany({
+        where: { customerId },
       });
 
-      res.json({ message: 'Customer and all related data deleted successfully' });
-    } catch (error) {
-      console.error('Error deleting customer:', error);
-      res.status(500).json({ message: 'Failed to delete customer', error: (error as Error).message } as ErrorResponse);
-    }
-  }
+      // Delete notifications
+      await tx.notification.deleteMany({
+        where: { customerId },
+      });
+
+      // Delete order items first, then orders
+      await tx.orderItem.deleteMany({
+        where: {
+          order: { customerId },
+        },
+      });
+
+      await tx.order.deleteMany({
+        where: { customerId },
+      });
+
+      // Finally delete the customer
+      await tx.customer.delete({
+        where: { id: customerId },
+      });
+    });
+
+    res.json({ message: 'Customer and all related data deleted successfully' });
+  })
 );
 
 /**
@@ -1073,35 +1038,31 @@ router.post(
   '/admin/:id/block',
   authenticateToken,
   requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const customerId = parseQueryString(req.params.id);
-      const { reason } = req.body as BlockCustomerRequest;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const customerId = parseQueryString(req.params.id);
+    const { reason } = req.body as BlockCustomerRequest;
 
-      const customer = await prisma.customer.update({
-        where: { id: customerId },
-        data: {
-          isBlocked: true,
-          blockedAt: new Date(),
-          blockedReason: reason || 'Blocked by administrator',
-        },
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          stageName: true,
-          isBlocked: true,
-          blockedAt: true,
-          blockedReason: true,
-        },
-      });
+    const customer = await prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        isBlocked: true,
+        blockedAt: new Date(),
+        blockedReason: reason || 'Blocked by administrator',
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        stageName: true,
+        isBlocked: true,
+        blockedAt: true,
+        blockedReason: true,
+      },
+    });
 
-      res.json({ message: 'Customer blocked', customer });
-    } catch (error) {
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-    }
-  }
+    res.json({ message: 'Customer blocked', customer });
+  })
 );
 
 /**
@@ -1112,31 +1073,27 @@ router.post(
   '/admin/:id/unblock',
   authenticateToken,
   requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const customerId = parseQueryString(req.params.id);
-      const customer = await prisma.customer.update({
-        where: { id: customerId },
-        data: {
-          isBlocked: false,
-          blockedAt: null,
-          blockedReason: null,
-        },
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          stageName: true,
-          isBlocked: true,
-        },
-      });
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const customerId = parseQueryString(req.params.id);
+    const customer = await prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        isBlocked: false,
+        blockedAt: null,
+        blockedReason: null,
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        stageName: true,
+        isBlocked: true,
+      },
+    });
 
-      res.json({ message: 'Customer unblocked', customer });
-    } catch (error) {
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-    }
-  }
+    res.json({ message: 'Customer unblocked', customer });
+  })
 );
 
 /**
@@ -1147,58 +1104,53 @@ router.post(
   '/admin/:id/impersonate',
   authenticateToken,
   requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const customerId = parseQueryString(req.params.id);
-      const authReq = req as AuthenticatedAdminRequest;
-      const customer = await prisma.customer.findUnique({
-        where: { id: customerId },
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          stageName: true,
-          profilePicture: true,
-          isGuest: true,
-        },
-      });
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const customerId = parseQueryString(req.params.id);
+    const authReq = req as AuthenticatedAdminRequest;
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        stageName: true,
+        profilePicture: true,
+        isGuest: true,
+      },
+    });
 
-      if (!customer) {
-        res.status(404).json({ message: 'Customer not found' } as ErrorResponse);
-        return;
-      }
-
-      // Generate a customer token for the admin to use
-      const customerToken = jwt.sign(
-        {
-          id: customer.id,
-          email: customer.email,
-          impersonatedBy: authReq.user.id, // Track who is impersonating
-        },
-        config.auth.jwtCustomerSecret,
-        { expiresIn: '1h' } // Short expiry for security
-      );
-
-      console.log(`[ADMIN] User ${authReq.user.username} is impersonating customer ${customer.email}`);
-
-      res.json({
-        token: customerToken,
-        customer: {
-          id: customer.id,
-          email: customer.email,
-          firstName: customer.firstName,
-          lastName: customer.lastName,
-          stageName: customer.stageName,
-          profilePicture: customer.profilePicture,
-          isGuest: customer.isGuest,
-        },
-        message: `You are now viewing as ${customer.email}. Token expires in 1 hour.`,
-      } as ImpersonateCustomerResponse & { message: string });
-    } catch (error) {
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
+    if (!customer) {
+      throw new NotFoundError('Customer not found');
     }
-  }
+
+    // Generate a customer token for the admin to use
+    const customerToken = jwt.sign(
+      {
+        id: customer.id,
+        email: customer.email,
+        impersonatedBy: authReq.user.id, // Track who is impersonating
+      },
+      config.auth.jwtCustomerSecret,
+      { expiresIn: '1h' } // Short expiry for security
+    );
+
+    console.log(`[ADMIN] User ${authReq.user.username} is impersonating customer ${customer.email}`);
+
+    res.json({
+      token: customerToken,
+      customer: {
+        id: customer.id,
+        email: customer.email,
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        stageName: customer.stageName,
+        profilePicture: customer.profilePicture,
+        isGuest: customer.isGuest,
+      },
+      message: `You are now viewing as ${customer.email}. Token expires in 1 hour.`,
+    } as ImpersonateCustomerResponse & { message: string });
+  })
 );
 
 export default router;

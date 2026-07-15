@@ -21,6 +21,7 @@ import {
   authenticateCustomer,
   optionalCustomerAuth,
 } from '../middleware';
+import { asyncHandler, BadRequestError, NotFoundError, ConflictError } from '../middleware';
 import type {
   AuthenticatedCustomerRequest,
   OptionalCustomerRequest,
@@ -28,7 +29,6 @@ import type {
   UpdateBeatRequest,
   LikeResponse,
   CreateCommentRequest,
-  ErrorResponse,
   Beat,
 } from '../types';
 
@@ -119,6 +119,63 @@ const uploadBeats = multer({
   },
 });
 
+/**
+ * Magic-byte signature check for the file types accepted above. multer's
+ * fileFilter only sees the client-supplied Content-Type header, which is
+ * trivially spoofable (e.g. an .exe renamed with Content-Type: audio/mpeg
+ * passes it) - this checks the actual bytes on disk after upload, since
+ * these are the only uploads served back to the public via /uploads.
+ */
+const FILE_SIGNATURES: Array<{ bytes: number[]; offset?: number }> = [
+  { bytes: [0x49, 0x44, 0x33] }, // MP3 (ID3)
+  { bytes: [0xff, 0xfb] }, // MP3 (no ID3, MPEG-1 Layer 3)
+  { bytes: [0xff, 0xf3] }, // MP3 (MPEG-2 Layer 3)
+  { bytes: [0xff, 0xf2] }, // MP3 (MPEG-2.5 Layer 3)
+  { bytes: [0x52, 0x49, 0x46, 0x46] }, // WAV/RIFF container (also matches WebP)
+  { bytes: [0x66, 0x74, 0x79, 0x70], offset: 4 }, // MP4/M4A (ftyp box)
+  { bytes: [0x4f, 0x67, 0x67, 0x53] }, // OGG
+  { bytes: [0xff, 0xd8, 0xff] }, // JPEG
+  { bytes: [0x89, 0x50, 0x4e, 0x47] }, // PNG
+  { bytes: [0x47, 0x49, 0x46, 0x38] }, // GIF
+];
+
+function hasKnownFileSignature(filePath: string): boolean {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(16);
+    fs.readSync(fd, buffer, 0, 16, 0);
+    return FILE_SIGNATURES.some(({ bytes, offset = 0 }) =>
+      bytes.every((byte, i) => buffer[offset + i] === byte)
+    );
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * Verifies every disk-written file in a multer `.fields()` upload against
+ * its magic bytes, deleting and rejecting the request if any file's actual
+ * content doesn't match a known signature for the accepted formats.
+ */
+function verifyUploadedFileSignatures(
+  files: { [fieldname: string]: Express.Multer.File[] } | undefined
+): void {
+  if (!files) return;
+  const allFiles = Object.values(files).flat();
+  for (const file of allFiles) {
+    if (!hasKnownFileSignature(file.path)) {
+      // Clean up every file from this request, not just the offending one,
+      // so a rejected upload doesn't leave orphaned files on disk.
+      for (const f of allFiles) {
+        fs.unlink(f.path, () => {});
+      }
+      throw new BadRequestError(
+        `Uploaded file "${file.originalname}" does not match its declared file type`
+      );
+    }
+  }
+}
+
 // ===========================================
 // HELPER FUNCTIONS
 // ===========================================
@@ -189,8 +246,9 @@ const mockBeats: Partial<Beat>[] = [
  * GET /api/beats
  * Get all beats with like and comment counts
  */
-router.get('/', async (_req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/',
+  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
     const beats = await prisma.beat.findMany({
       include: {
         _count: {
@@ -216,17 +274,16 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
     }));
 
     res.json(beatsWithCounts);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * GET /api/beats/:id
  * Get a single beat by ID
  */
-router.get('/:id', async (req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/:id',
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const beatId = parseRouteParam(req.params.id);
     const beat = await prisma.beat.findUnique({
       where: { id: beatId },
@@ -241,8 +298,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
     });
 
     if (!beat) {
-      res.status(404).json({ message: 'Beat not found' } as ErrorResponse);
-      return;
+      throw new NotFoundError('Beat not found');
     }
 
     res.json({
@@ -251,10 +307,8 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
       commentCount: beat._count.comments,
       _count: undefined,
     });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 // ===========================================
 // BEAT CRUD OPERATIONS (ADMIN)
@@ -273,89 +327,86 @@ router.post(
     { name: 'wavFile', maxCount: 1 },
     { name: 'coverArt', maxCount: 1 },
   ]),
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { title, genre, category, bpm, key, duration, price, producedBy, soldExclusively, soldExclusivelyTo } =
-        req.body as CreateBeatRequest & { soldExclusively?: string; soldExclusivelyTo?: string };
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { title, genre, category, bpm, key, duration, price, producedBy, soldExclusively, soldExclusivelyTo } =
+      req.body as CreateBeatRequest & { soldExclusively?: string; soldExclusivelyTo?: string };
 
-      console.log('[BEAT CREATE] Received data:', {
-        title,
-        genre,
-        category,
-        bpm,
-        key,
-        duration,
-        price,
-        producedBy,
-        soldExclusively,
-        soldExclusivelyTo,
-      });
+    console.log('[BEAT CREATE] Received data:', {
+      title,
+      genre,
+      category,
+      bpm,
+      key,
+      duration,
+      price,
+      producedBy,
+      soldExclusively,
+      soldExclusivelyTo,
+    });
 
-      let audioFile: string | null = null;
-      let wavFile: string | null = null;
-      let coverArt: string | null = null;
-      let extractedDuration = duration ? parseInt(String(duration)) : null;
+    let audioFile: string | null = null;
+    let wavFile: string | null = null;
+    let coverArt: string | null = null;
+    let extractedDuration = duration ? parseInt(String(duration)) : null;
 
-      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    verifyUploadedFileSignatures(files);
 
-      if (files) {
-        // Handle MP3 preview file
-        if (files.audioFile && files.audioFile[0]) {
-          audioFile = `/uploads/${files.audioFile[0].filename}`;
+    if (files) {
+      // Handle MP3 preview file
+      if (files.audioFile && files.audioFile[0]) {
+        audioFile = `/uploads/${files.audioFile[0].filename}`;
 
-          // Auto-extract duration from audio file if not provided
-          if (!extractedDuration) {
-            extractedDuration = await getAudioDuration(audioFile);
-            console.log('[BEAT CREATE] Auto-extracted duration:', extractedDuration, 'seconds');
-          }
-        }
-
-        // Handle WAV file
-        if (files.wavFile && files.wavFile[0]) {
-          wavFile = `/uploads/${files.wavFile[0].filename}`;
-
-          // If no duration yet, try to extract from WAV file
-          if (!extractedDuration) {
-            extractedDuration = await getAudioDuration(wavFile);
-            console.log('[BEAT CREATE] Auto-extracted duration from WAV:', extractedDuration, 'seconds');
-          }
-        }
-
-        // Handle cover art
-        if (files.coverArt && files.coverArt[0]) {
-          const uploadPath = `uploads/covers/${files.coverArt[0].filename}`;
-          const processedPath = await processCoverArt(uploadPath);
-          coverArt = processedPath.replace(/\\/g, '/');
+        // Auto-extract duration from audio file if not provided
+        if (!extractedDuration) {
+          extractedDuration = await getAudioDuration(audioFile);
+          console.log('[BEAT CREATE] Auto-extracted duration:', extractedDuration, 'seconds');
         }
       }
 
-      const isSoldExclusively = soldExclusively === 'true' || String(soldExclusively) === 'true';
+      // Handle WAV file
+      if (files.wavFile && files.wavFile[0]) {
+        wavFile = `/uploads/${files.wavFile[0].filename}`;
 
-      const newBeat = await prisma.beat.create({
-        data: {
-          title,
-          genre: genre || null,
-          category: category || null,
-          bpm: bpm ? parseInt(String(bpm)) : null,
-          key: key || null,
-          duration: extractedDuration,
-          price: price ? parseFloat(String(price)) : null,
-          producedBy: producedBy && producedBy.trim() ? producedBy.trim() : null,
-          audioFile,
-          wavFile,
-          coverArt,
-          soldExclusively: isSoldExclusively,
-          soldExclusivelyAt: isSoldExclusively ? new Date() : null,
-          soldExclusivelyTo: isSoldExclusively && soldExclusivelyTo ? soldExclusivelyTo.trim() : null,
-        },
-      });
+        // If no duration yet, try to extract from WAV file
+        if (!extractedDuration) {
+          extractedDuration = await getAudioDuration(wavFile);
+          console.log('[BEAT CREATE] Auto-extracted duration from WAV:', extractedDuration, 'seconds');
+        }
+      }
 
-      console.log('[BEAT CREATE] Created beat:', newBeat);
-      res.status(201).json(newBeat);
-    } catch (error) {
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
+      // Handle cover art
+      if (files.coverArt && files.coverArt[0]) {
+        const uploadPath = `uploads/covers/${files.coverArt[0].filename}`;
+        const processedPath = await processCoverArt(uploadPath);
+        coverArt = processedPath.replace(/\\/g, '/');
+      }
     }
-  }
+
+    const isSoldExclusively = soldExclusively === 'true' || String(soldExclusively) === 'true';
+
+    const newBeat = await prisma.beat.create({
+      data: {
+        title,
+        genre: genre || null,
+        category: category || null,
+        bpm: bpm ? parseInt(String(bpm)) : null,
+        key: key || null,
+        duration: extractedDuration,
+        price: price ? parseFloat(String(price)) : null,
+        producedBy: producedBy && producedBy.trim() ? producedBy.trim() : null,
+        audioFile,
+        wavFile,
+        coverArt,
+        soldExclusively: isSoldExclusively,
+        soldExclusivelyAt: isSoldExclusively ? new Date() : null,
+        soldExclusivelyTo: isSoldExclusively && soldExclusivelyTo ? soldExclusivelyTo.trim() : null,
+      },
+    });
+
+    console.log('[BEAT CREATE] Created beat:', newBeat);
+    res.status(201).json(newBeat);
+  })
 );
 
 /**
@@ -371,111 +422,107 @@ router.put(
     { name: 'wavFile', maxCount: 1 },
     { name: 'coverArt', maxCount: 1 },
   ]),
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { title, genre, category, bpm, key, duration, price, producedBy, soldExclusively, soldExclusivelyTo } =
-        req.body as UpdateBeatRequest & { soldExclusively?: string; soldExclusivelyTo?: string };
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { title, genre, category, bpm, key, duration, price, producedBy, soldExclusively, soldExclusivelyTo } =
+      req.body as UpdateBeatRequest & { soldExclusively?: string; soldExclusivelyTo?: string };
 
-      console.log('[BEAT UPDATE] Received data:', {
-        title,
-        genre,
-        category,
-        bpm,
-        key,
-        duration,
-        price,
-        producedBy,
-        soldExclusively,
-        soldExclusivelyTo,
-      });
+    console.log('[BEAT UPDATE] Received data:', {
+      title,
+      genre,
+      category,
+      bpm,
+      key,
+      duration,
+      price,
+      producedBy,
+      soldExclusively,
+      soldExclusivelyTo,
+    });
 
-      const beatIdParam = parseRouteParam(req.params.id);
-      const beat = await prisma.beat.findUnique({
-        where: { id: beatIdParam },
-      });
+    const beatIdParam = parseRouteParam(req.params.id);
+    const beat = await prisma.beat.findUnique({
+      where: { id: beatIdParam },
+    });
 
-      if (!beat) {
-        res.status(404).json({ message: 'Beat not found' } as ErrorResponse);
-        return;
-      }
-
-      const isSoldExclusively = soldExclusively === 'true' || String(soldExclusively) === 'true';
-      const wasSoldExclusively = beat.soldExclusively;
-
-      const updateData: Record<string, unknown> = {
-        ...(title && { title }),
-        ...(genre && { genre }),
-        ...(category && { category }),
-        ...(bpm && { bpm: parseInt(String(bpm)) }),
-        ...(key && { key }),
-        ...(duration && { duration: parseInt(String(duration)) }),
-        ...(price && { price: parseFloat(String(price)) }),
-        // Handle producedBy - allow empty string to clear, keep existing if undefined
-        producedBy: producedBy !== undefined ? (producedBy.trim() || null) : beat.producedBy,
-        // Handle soldExclusively fields
-        soldExclusively: isSoldExclusively,
-        soldExclusivelyAt:
-          isSoldExclusively && !wasSoldExclusively
-            ? new Date()
-            : isSoldExclusively
-            ? beat.soldExclusivelyAt
-            : null,
-        soldExclusivelyTo: isSoldExclusively
-          ? (soldExclusivelyTo?.trim() || beat.soldExclusivelyTo)
-          : null,
-      };
-
-      console.log('[BEAT UPDATE] Update data:', updateData);
-
-      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-
-      if (files) {
-        // Handle MP3 preview file
-        if (files.audioFile && files.audioFile[0]) {
-          updateData.audioFile = `/uploads/${files.audioFile[0].filename}`;
-
-          // Auto-extract duration from new audio file if duration not manually provided
-          if (!duration) {
-            const extractedDuration = await getAudioDuration(updateData.audioFile as string);
-            if (extractedDuration) {
-              updateData.duration = extractedDuration;
-              console.log('[BEAT UPDATE] Auto-extracted duration:', extractedDuration, 'seconds');
-            }
-          }
-        }
-
-        // Handle WAV file
-        if (files.wavFile && files.wavFile[0]) {
-          updateData.wavFile = `/uploads/${files.wavFile[0].filename}`;
-
-          // If no duration yet and new WAV uploaded, extract from WAV
-          if (!duration && !updateData.duration) {
-            const extractedDuration = await getAudioDuration(updateData.wavFile as string);
-            if (extractedDuration) {
-              updateData.duration = extractedDuration;
-              console.log('[BEAT UPDATE] Auto-extracted duration from WAV:', extractedDuration, 'seconds');
-            }
-          }
-        }
-
-        // Handle cover art
-        if (files.coverArt && files.coverArt[0]) {
-          const uploadPath = `uploads/covers/${files.coverArt[0].filename}`;
-          const processedPath = await processCoverArt(uploadPath);
-          updateData.coverArt = processedPath.replace(/\\/g, '/');
-        }
-      }
-
-      const updatedBeat = await prisma.beat.update({
-        where: { id: beatIdParam },
-        data: updateData,
-      });
-
-      res.json(updatedBeat);
-    } catch (error) {
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
+    if (!beat) {
+      throw new NotFoundError('Beat not found');
     }
-  }
+
+    const isSoldExclusively = soldExclusively === 'true' || String(soldExclusively) === 'true';
+    const wasSoldExclusively = beat.soldExclusively;
+
+    const updateData: Record<string, unknown> = {
+      ...(title && { title }),
+      ...(genre && { genre }),
+      ...(category && { category }),
+      ...(bpm && { bpm: parseInt(String(bpm)) }),
+      ...(key && { key }),
+      ...(duration && { duration: parseInt(String(duration)) }),
+      ...(price && { price: parseFloat(String(price)) }),
+      // Handle producedBy - allow empty string to clear, keep existing if undefined
+      producedBy: producedBy !== undefined ? (producedBy.trim() || null) : beat.producedBy,
+      // Handle soldExclusively fields
+      soldExclusively: isSoldExclusively,
+      soldExclusivelyAt:
+        isSoldExclusively && !wasSoldExclusively
+          ? new Date()
+          : isSoldExclusively
+          ? beat.soldExclusivelyAt
+          : null,
+      soldExclusivelyTo: isSoldExclusively
+        ? (soldExclusivelyTo?.trim() || beat.soldExclusivelyTo)
+        : null,
+    };
+
+    console.log('[BEAT UPDATE] Update data:', updateData);
+
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    verifyUploadedFileSignatures(files);
+
+    if (files) {
+      // Handle MP3 preview file
+      if (files.audioFile && files.audioFile[0]) {
+        updateData.audioFile = `/uploads/${files.audioFile[0].filename}`;
+
+        // Auto-extract duration from new audio file if duration not manually provided
+        if (!duration) {
+          const extractedDuration = await getAudioDuration(updateData.audioFile as string);
+          if (extractedDuration) {
+            updateData.duration = extractedDuration;
+            console.log('[BEAT UPDATE] Auto-extracted duration:', extractedDuration, 'seconds');
+          }
+        }
+      }
+
+      // Handle WAV file
+      if (files.wavFile && files.wavFile[0]) {
+        updateData.wavFile = `/uploads/${files.wavFile[0].filename}`;
+
+        // If no duration yet and new WAV uploaded, extract from WAV
+        if (!duration && !updateData.duration) {
+          const extractedDuration = await getAudioDuration(updateData.wavFile as string);
+          if (extractedDuration) {
+            updateData.duration = extractedDuration;
+            console.log('[BEAT UPDATE] Auto-extracted duration from WAV:', extractedDuration, 'seconds');
+          }
+        }
+      }
+
+      // Handle cover art
+      if (files.coverArt && files.coverArt[0]) {
+        const uploadPath = `uploads/covers/${files.coverArt[0].filename}`;
+        const processedPath = await processCoverArt(uploadPath);
+        updateData.coverArt = processedPath.replace(/\\/g, '/');
+      }
+    }
+
+    const updatedBeat = await prisma.beat.update({
+      where: { id: beatIdParam },
+      data: updateData,
+    });
+
+    res.json(updatedBeat);
+  })
 );
 
 /**
@@ -483,8 +530,11 @@ router.put(
  * Delete a beat (admin only)
  * Prevents deletion of purchased beats to preserve order history
  */
-router.delete('/:id', authenticateToken, requireAdmin, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.delete(
+  '/:id',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const beatId = parseRouteParam(req.params.id);
 
     // Check if beat exists and include orderItems for purchase check
@@ -496,17 +546,16 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: Request, res:
     });
 
     if (!beat) {
-      res.status(404).json({ message: 'Beat not found' } as ErrorResponse);
-      return;
+      throw new NotFoundError('Beat not found');
     }
 
     // Check if beat has been purchased - prevent deletion to preserve order history
     if (beat.orderItems && beat.orderItems.length > 0) {
-      res.status(400).json({
-        message: 'Cannot delete this beat because it has been purchased. Consider hiding it instead.',
-        orderCount: beat.orderItems.length,
-      } as ErrorResponse);
-      return;
+      throw new BadRequestError(
+        `Cannot delete this beat because it has been purchased (${beat.orderItems.length} order${
+          beat.orderItems.length === 1 ? '' : 's'
+        }). Consider hiding it instead.`
+      );
     }
 
     // Delete related records first (likes, playlist entries, comments)
@@ -519,11 +568,8 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: Request, res:
     ]);
 
     res.json({ message: 'Beat deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting beat:', error);
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 // ===========================================
 // BEAT LIKES
@@ -533,8 +579,10 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: Request, res:
  * POST /api/beats/:id/like
  * Like a beat (requires customer authentication)
  */
-router.post('/:id/like', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.post(
+  '/:id/like',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const beatId = parseRouteParam(req.params.id);
 
@@ -548,8 +596,7 @@ router.post('/:id/like', authenticateCustomer, async (req: Request, res: Respons
     });
 
     if (existingLike) {
-      res.status(400).json({ message: 'Already liked' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Already liked');
     }
 
     await prisma.beatLike.create({
@@ -564,51 +611,54 @@ router.post('/:id/like', authenticateCustomer, async (req: Request, res: Respons
     });
 
     res.json({ liked: true, likeCount } as LikeResponse);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * DELETE /api/beats/:id/like
  * Unlike a beat (requires customer authentication)
  */
-router.delete('/:id/like', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.delete(
+  '/:id/like',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const beatId = parseRouteParam(req.params.id);
 
-    await prisma.beatLike.delete({
-      where: {
-        customerId_beatId: {
-          customerId: authReq.customer.id,
-          beatId,
+    try {
+      await prisma.beatLike.delete({
+        where: {
+          customerId_beatId: {
+            customerId: authReq.customer.id,
+            beatId,
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      const prismaError = error as { code?: string };
+      if (prismaError.code === 'P2025') {
+        throw new NotFoundError('Like not found');
+      }
+      throw error;
+    }
 
     const likeCount = await prisma.beatLike.count({
       where: { beatId },
     });
 
     res.json({ liked: false, likeCount } as LikeResponse);
-  } catch (error) {
-    const prismaError = error as { code?: string };
-    if (prismaError.code === 'P2025') {
-      res.status(404).json({ message: 'Like not found' } as ErrorResponse);
-      return;
-    }
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * GET /api/beats/:id/likes
  * Get like count and status for a beat
  * Optionally returns isLiked if customer is authenticated
  */
-router.get('/:id/likes', optionalCustomerAuth, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/:id/likes',
+  optionalCustomerAuth,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const optReq = req as OptionalCustomerRequest;
     const beatId = parseRouteParam(req.params.id);
 
@@ -630,10 +680,8 @@ router.get('/:id/likes', optionalCustomerAuth, async (req: Request, res: Respons
     }
 
     res.json({ likeCount, isLiked });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 // ===========================================
 // BEAT SAVES (PLAYLISTS)
@@ -644,8 +692,10 @@ router.get('/:id/likes', optionalCustomerAuth, async (req: Request, res: Respons
  * Save a beat to a playlist (requires customer authentication)
  * If no playlistId provided, saves to default "Saved Beats" playlist
  */
-router.post('/:id/save', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.post(
+  '/:id/save',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const { playlistId } = req.body as { playlistId?: string };
     const beatId = parseRouteParam(req.params.id);
@@ -683,8 +733,7 @@ router.post('/:id/save', authenticateCustomer, async (req: Request, res: Respons
     });
 
     if (!playlist) {
-      res.status(404).json({ message: 'Playlist not found' } as ErrorResponse);
-      return;
+      throw new NotFoundError('Playlist not found');
     }
 
     // Check if already saved
@@ -698,8 +747,7 @@ router.post('/:id/save', authenticateCustomer, async (req: Request, res: Respons
     });
 
     if (existing) {
-      res.status(400).json({ message: 'Beat already in playlist' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Beat already in playlist');
     }
 
     await prisma.playlistBeat.create({
@@ -710,10 +758,8 @@ router.post('/:id/save', authenticateCustomer, async (req: Request, res: Respons
     });
 
     res.json({ saved: true, playlistId: targetPlaylistId });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 // ===========================================
 // BEAT COMMENTS
@@ -723,8 +769,9 @@ router.post('/:id/save', authenticateCustomer, async (req: Request, res: Respons
  * GET /api/beats/:id/comments
  * Get all comments for a beat with replies
  */
-router.get('/:id/comments', async (req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/:id/comments',
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const beatId = parseRouteParam(req.params.id);
 
     // Get top-level comments only (no parentId)
@@ -781,30 +828,28 @@ router.get('/:id/comments', async (req: Request, res: Response): Promise<void> =
     }));
 
     res.json(transformedComments);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * POST /api/beats/:id/comments
  * Add a comment to a beat (requires customer authentication)
  * Can be a reply if parentId is provided
  */
-router.post('/:id/comments', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.post(
+  '/:id/comments',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const { content, parentId } = req.body as CreateCommentRequest;
     const beatId = parseRouteParam(req.params.id);
 
     if (!content || content.trim().length === 0) {
-      res.status(400).json({ message: 'Comment content is required' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Comment content is required');
     }
 
     if (content.length > 1000) {
-      res.status(400).json({ message: 'Comment too long (max 1000 characters)' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Comment too long (max 1000 characters)');
     }
 
     // If parentId is provided, verify it exists and belongs to this beat
@@ -817,8 +862,7 @@ router.post('/:id/comments', authenticateCustomer, async (req: Request, res: Res
         },
       });
       if (!parentComment) {
-        res.status(400).json({ message: 'Invalid parent comment' } as ErrorResponse);
-        return;
+        throw new BadRequestError('Invalid parent comment');
       }
     }
 
@@ -850,17 +894,17 @@ router.post('/:id/comments', authenticateCustomer, async (req: Request, res: Res
       _count: undefined,
       replies: [],
     });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * GET /api/beats/:id/comments/likes
  * Get list of comment IDs that the authenticated customer has liked for this beat
  */
-router.get('/:id/comments/likes', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/:id/comments/likes',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const beatId = parseRouteParam(req.params.id);
 
@@ -877,10 +921,8 @@ router.get('/:id/comments/likes', authenticateCustomer, async (req: Request, res
     });
 
     res.json(likedComments.map((l) => l.commentId));
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 // ===========================================
 // COMMENT OPERATIONS (NON-BEAT-SPECIFIC)
@@ -890,8 +932,10 @@ router.get('/:id/comments/likes', authenticateCustomer, async (req: Request, res
  * DELETE /api/beats/comments/:id
  * Delete own comment (requires customer authentication)
  */
-router.delete('/comments/:id', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.delete(
+  '/comments/:id',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const commentId = parseRouteParam(req.params.id);
 
@@ -903,8 +947,7 @@ router.delete('/comments/:id', authenticateCustomer, async (req: Request, res: R
     });
 
     if (!comment) {
-      res.status(404).json({ message: 'Comment not found' } as ErrorResponse);
-      return;
+      throw new NotFoundError('Comment not found');
     }
 
     await prisma.comment.delete({
@@ -912,17 +955,17 @@ router.delete('/comments/:id', authenticateCustomer, async (req: Request, res: R
     });
 
     res.json({ message: 'Comment deleted' });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * POST /api/beats/comments/:id/report
  * Report a comment (requires customer authentication)
  */
-router.post('/comments/:id/report', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.post(
+  '/comments/:id/report',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const commentId = parseRouteParam(req.params.id);
 
@@ -936,17 +979,17 @@ router.post('/comments/:id/report', authenticateCustomer, async (req: Request, r
     });
 
     res.json({ message: 'Comment reported' });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * POST /api/beats/comments/:id/like
  * Like a comment (requires customer authentication)
  */
-router.post('/comments/:id/like', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.post(
+  '/comments/:id/like',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const commentId = parseRouteParam(req.params.id);
 
@@ -956,8 +999,7 @@ router.post('/comments/:id/like', authenticateCustomer, async (req: Request, res
     });
 
     if (!comment) {
-      res.status(404).json({ message: 'Comment not found' } as ErrorResponse);
-      return;
+      throw new NotFoundError('Comment not found');
     }
 
     // Check if already liked
@@ -971,8 +1013,7 @@ router.post('/comments/:id/like', authenticateCustomer, async (req: Request, res
     });
 
     if (existingLike) {
-      res.status(409).json({ message: 'Already liked' } as ErrorResponse);
-      return;
+      throw new ConflictError('Already liked');
     }
 
     await prisma.commentLike.create({
@@ -988,17 +1029,17 @@ router.post('/comments/:id/like', authenticateCustomer, async (req: Request, res
     });
 
     res.json({ liked: true, likeCount } as LikeResponse);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * DELETE /api/beats/comments/:id/like
  * Unlike a comment (requires customer authentication)
  */
-router.delete('/comments/:id/like', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.delete(
+  '/comments/:id/like',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const commentId = parseRouteParam(req.params.id);
 
@@ -1015,10 +1056,8 @@ router.delete('/comments/:id/like', authenticateCustomer, async (req: Request, r
     });
 
     res.json({ liked: false, likeCount } as LikeResponse);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 // ===========================================
 // PLAYLIST OPERATIONS
@@ -1028,8 +1067,10 @@ router.delete('/comments/:id/like', authenticateCustomer, async (req: Request, r
  * PUT /api/playlists/:id
  * Rename a playlist (requires customer authentication)
  */
-router.put('/playlists/:id', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.put(
+  '/playlists/:id',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const { name } = req.body as { name: string };
     const playlistId = parseRouteParam(req.params.id);
@@ -1042,13 +1083,11 @@ router.put('/playlists/:id', authenticateCustomer, async (req: Request, res: Res
     });
 
     if (!playlist) {
-      res.status(404).json({ message: 'Playlist not found' } as ErrorResponse);
-      return;
+      throw new NotFoundError('Playlist not found');
     }
 
     if (playlist.isDefault) {
-      res.status(400).json({ message: 'Cannot rename default playlist' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Cannot rename default playlist');
     }
 
     const updated = await prisma.playlist.update({
@@ -1057,17 +1096,17 @@ router.put('/playlists/:id', authenticateCustomer, async (req: Request, res: Res
     });
 
     res.json(updated);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * DELETE /api/playlists/:id
  * Delete a playlist (requires customer authentication)
  */
-router.delete('/playlists/:id', authenticateCustomer, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.delete(
+  '/playlists/:id',
+  authenticateCustomer,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const authReq = req as AuthenticatedCustomerRequest;
     const playlistId = parseRouteParam(req.params.id);
 
@@ -1079,13 +1118,11 @@ router.delete('/playlists/:id', authenticateCustomer, async (req: Request, res: 
     });
 
     if (!playlist) {
-      res.status(404).json({ message: 'Playlist not found' } as ErrorResponse);
-      return;
+      throw new NotFoundError('Playlist not found');
     }
 
     if (playlist.isDefault) {
-      res.status(400).json({ message: 'Cannot delete default playlist' } as ErrorResponse);
-      return;
+      throw new BadRequestError('Cannot delete default playlist');
     }
 
     await prisma.playlist.delete({
@@ -1093,10 +1130,8 @@ router.delete('/playlists/:id', authenticateCustomer, async (req: Request, res: 
     });
 
     res.json({ message: 'Playlist deleted' });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * DELETE /api/playlists/:playlistId/beats/:beatId
@@ -1105,25 +1140,24 @@ router.delete('/playlists/:id', authenticateCustomer, async (req: Request, res: 
 router.delete(
   '/playlists/:playlistId/beats/:beatId',
   authenticateCustomer,
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const authReq = req as AuthenticatedCustomerRequest;
+    const playlistId = parseRouteParam(req.params.playlistId);
+    const beatId = parseRouteParam(req.params.beatId);
+
+    // Verify playlist belongs to customer
+    const playlist = await prisma.playlist.findFirst({
+      where: {
+        id: playlistId,
+        customerId: authReq.customer.id,
+      },
+    });
+
+    if (!playlist) {
+      throw new NotFoundError('Playlist not found');
+    }
+
     try {
-      const authReq = req as AuthenticatedCustomerRequest;
-      const playlistId = parseRouteParam(req.params.playlistId);
-      const beatId = parseRouteParam(req.params.beatId);
-
-      // Verify playlist belongs to customer
-      const playlist = await prisma.playlist.findFirst({
-        where: {
-          id: playlistId,
-          customerId: authReq.customer.id,
-        },
-      });
-
-      if (!playlist) {
-        res.status(404).json({ message: 'Playlist not found' } as ErrorResponse);
-        return;
-      }
-
       await prisma.playlistBeat.delete({
         where: {
           playlistId_beatId: {
@@ -1132,17 +1166,16 @@ router.delete(
           },
         },
       });
-
-      res.json({ removed: true });
     } catch (error) {
       const prismaError = error as { code?: string };
       if (prismaError.code === 'P2025') {
-        res.status(404).json({ message: 'Beat not in playlist' } as ErrorResponse);
-        return;
+        throw new NotFoundError('Beat not in playlist');
       }
-      res.status(500).json({ message: 'Server error', error: (error as Error).message } as ErrorResponse);
+      throw error;
     }
-  }
+
+    res.json({ removed: true });
+  })
 );
 
 export default router;

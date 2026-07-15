@@ -15,10 +15,20 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { config } from '../config/env';
 import { sendEmail } from '../services/email';
+import { captureError } from '../services/sentry';
+import { paymentLimiter, authenticateToken, requireAdmin } from '../middleware';
+import {
+  asyncHandler,
+  BadRequestError,
+  UnauthorizedError,
+  ForbiddenError,
+  NotFoundError,
+  ConflictError,
+  InternalError,
+} from '../middleware';
 import type {
   CartItem,
   LicenseType,
-  ErrorResponse,
   SquareWebhookEvent,
 } from '../types';
 
@@ -315,6 +325,7 @@ async function sendDownloadEmail(order: OrderWithRelations): Promise<void> {
       '[EMAIL] Failed to send download email:',
       (error as Error).message
     );
+    captureError(error, { orderNumber: order.orderNumber, context: 'download-email' });
   }
 }
 
@@ -398,14 +409,13 @@ function extractPaymentId(eventObject: Record<string, unknown>): string | undefi
  */
 router.post(
   '/webhooks/square',
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const signature = req.header('x-square-hmacsha256-signature');
     const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
 
     if (!isValidSquareSignature(rawBody, signature)) {
       console.warn('[SQUARE WEBHOOK] Rejected event with invalid signature');
-      res.status(401).json({ message: 'Invalid signature' });
-      return;
+      throw new UnauthorizedError('Invalid signature');
     }
 
     const event = req.body as SquareWebhookEvent;
@@ -435,10 +445,11 @@ router.post(
       // retry undelivered/failed webhooks, and we don't want retries
       // piling up for a bug on our side turning into duplicate work.
       console.error('[SQUARE WEBHOOK] Error processing event:', error);
+      captureError(error, { eventType: event.type, context: 'square-webhook' });
     }
 
     res.json({ received: true });
-  }
+  })
 );
 
 // ===========================================
@@ -463,133 +474,130 @@ interface ProcessPaymentRequest {
  */
 router.post(
   '/checkout/process-payment',
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { sourceId, items, customer: customerData } =
-        req.body as ProcessPaymentRequest;
+  paymentLimiter,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { sourceId, items, customer: customerData } =
+      req.body as ProcessPaymentRequest;
 
-      // Validate source ID (payment token from Square Web Payments SDK)
-      if (!sourceId) {
-        res
-          .status(400)
-          .json({ message: 'Payment source is required' } as ErrorResponse);
-        return;
-      }
+    // Validate source ID (payment token from Square Web Payments SDK)
+    if (!sourceId) {
+      throw new BadRequestError('Payment source is required');
+    }
 
-      if (!items || items.length === 0) {
-        res.status(400).json({ message: 'Cart is empty' } as ErrorResponse);
-        return;
-      }
+    if (!items || items.length === 0) {
+      throw new BadRequestError('Cart is empty');
+    }
 
-      if (!customerData || !customerData.email) {
-        res
-          .status(400)
-          .json({ message: 'Customer email is required' } as ErrorResponse);
-        return;
-      }
+    if (!customerData || !customerData.email) {
+      throw new BadRequestError('Customer email is required');
+    }
 
-      if (!isValidEmail(customerData.email)) {
-        res
-          .status(400)
-          .json({ message: 'Invalid email format' } as ErrorResponse);
-        return;
-      }
+    if (!isValidEmail(customerData.email)) {
+      throw new BadRequestError('Invalid email format');
+    }
 
-      // Find or create customer
-      let customer = await prisma.customer.findUnique({
-        where: { email: customerData.email },
-      });
+    // Find or create customer
+    let customer = await prisma.customer.findUnique({
+      where: { email: customerData.email },
+    });
 
-      if (!customer) {
-        customer = await prisma.customer.create({
-          data: {
-            email: customerData.email,
-            firstName: customerData.firstName || null,
-            lastName: customerData.lastName || null,
-            phone: customerData.phone || null,
-            isGuest: !customerData.password,
-          },
-        });
-      }
-
-      // Validate items and get beat details
-      const beatIds = items.map((item) => item.beatId);
-      const beats = await prisma.beat.findMany({
-        where: { id: { in: beatIds } },
-      });
-
-      if (beats.length !== items.length) {
-        res
-          .status(400)
-          .json({ message: 'Some beats not found' } as ErrorResponse);
-        return;
-      }
-
-      // Calculate totals
-      const orderItems: Array<{
-        beatId: string;
-        licenseType: string;
-        licenseName: string;
-        price: number;
-      }> = [];
-      let subtotal = 0;
-
-      for (const item of items) {
-        const beat = beats.find((b) => b.id === item.beatId);
-        if (!beat) continue;
-
-        // Get license tier
-        const licenseTier = getLicenseTier(item.licenseType);
-        if (!licenseTier) {
-          res.status(400).json({
-            message: `Invalid license type: ${item.licenseType}`,
-          } as ErrorResponse);
-          return;
-        }
-
-        subtotal += licenseTier.price;
-        orderItems.push({
-          beatId: beat.id,
-          licenseType: item.licenseType,
-          licenseName: licenseTier.name,
-          price: licenseTier.price,
-        });
-      }
-
-      // Generate order number
-      const orderNumber = await generateOrderNumber();
-
-      // Set download expiry for guests (7 days)
-      const downloadExpiresAt = customer.isGuest
-        ? new Date(
-            Date.now() + config.downloadLinkExpiryDays * 24 * 60 * 60 * 1000
-          )
-        : null;
-
-      // Create order in pending state
-      const order = await prisma.order.create({
+    if (!customer) {
+      customer = await prisma.customer.create({
         data: {
-          orderNumber,
-          customerId: customer.id,
-          status: 'PENDING',
-          paymentStatus: 'PENDING',
-          subtotal,
-          total: subtotal,
-          downloadExpiresAt,
-          items: {
-            create: orderItems,
-          },
+          email: customerData.email,
+          firstName: customerData.firstName || null,
+          lastName: customerData.lastName || null,
+          phone: customerData.phone || null,
+          isGuest: !customerData.password,
         },
       });
+    }
 
-      console.log(
-        '[SQUARE] Processing payment for order:',
+    // Validate items and get beat details
+    const beatIds = items.map((item) => item.beatId);
+    const beats = await prisma.beat.findMany({
+      where: { id: { in: beatIds } },
+    });
+
+    if (beats.length !== items.length) {
+      throw new BadRequestError('Some beats not found');
+    }
+
+    // Calculate totals
+    // TODO(tax): no sales tax is calculated or collected anywhere in this
+    // flow. Before adding it, confirm with an accountant whether digital
+    // beat licenses are taxable in FL / the customer's state (nexus rules
+    // vary by jurisdiction) - this is a compliance decision, not just a
+    // missing feature.
+    const orderItems: Array<{
+      beatId: string;
+      licenseType: string;
+      licenseName: string;
+      price: number;
+    }> = [];
+    let subtotal = 0;
+
+    for (const item of items) {
+      const beat = beats.find((b) => b.id === item.beatId);
+      if (!beat) continue;
+
+      // Get license tier
+      const licenseTier = getLicenseTier(item.licenseType);
+      if (!licenseTier) {
+        throw new BadRequestError(`Invalid license type: ${item.licenseType}`);
+      }
+
+      subtotal += licenseTier.price;
+      orderItems.push({
+        beatId: beat.id,
+        licenseType: item.licenseType,
+        licenseName: licenseTier.name,
+        price: licenseTier.price,
+      });
+    }
+
+    // Generate order number
+    const orderNumber = await generateOrderNumber();
+
+    // Set download expiry for guests (7 days)
+    const downloadExpiresAt = customer.isGuest
+      ? new Date(
+          Date.now() + config.downloadLinkExpiryDays * 24 * 60 * 60 * 1000
+        )
+      : null;
+
+    // Create order in pending state
+    const order = await prisma.order.create({
+      data: {
         orderNumber,
-        'Amount:',
-        subtotal * 100,
-        'cents'
-      );
+        customerId: customer.id,
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
+        subtotal,
+        total: subtotal,
+        downloadExpiresAt,
+        items: {
+          create: orderItems,
+        },
+      },
+    });
 
+    console.log(
+      '[SQUARE] Processing payment for order:',
+      orderNumber,
+      'Amount:',
+      subtotal * 100,
+      'cents'
+    );
+
+    // The Square payment call and its outcome handling below are wrapped
+    // in their own try/catch (rather than relying on the outer asyncHandler)
+    // because failures here need bespoke, user-facing responses derived from
+    // Square's error shape - the centralized handler's generic 500 body
+    // would lose that detail. Genuine unexpected/internal failures still
+    // fall through to a thrown InternalError so the raw error message is
+    // never leaked to the client.
+    try {
       // Process payment with Square
       const paymentResponse = await squareClient.payments.create({
         sourceId: sourceId,
@@ -641,6 +649,7 @@ router.post(
       }
     } catch (error) {
       console.error('[CHECKOUT] Error processing payment:', error);
+      captureError(error, { orderNumber: order.orderNumber, context: 'checkout-payment' });
 
       // Square API errors have specific structure
       const squareError = error as { errors?: Array<{ detail?: string; code?: string }> };
@@ -654,13 +663,9 @@ router.post(
         return;
       }
 
-      res.status(500).json({
-        success: false,
-        message: 'Failed to process payment',
-        error: (error as Error).message,
-      });
+      throw new InternalError('Failed to process payment');
     }
-  }
+  })
 );
 
 /**
@@ -687,57 +692,140 @@ router.get('/checkout/square-config', (_req: Request, res: Response): void => {
  */
 router.get(
   '/orders/:orderNumber',
-  async (req: Request<{ orderNumber: string }>, res: Response): Promise<void> => {
-    try {
-      const { orderNumber } = req.params;
-      const key = typeof req.query.key === 'string' ? req.query.key : undefined;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const orderNumber = req.params.orderNumber as string;
+    const key = typeof req.query.key === 'string' ? req.query.key : undefined;
 
-      if (!key) {
-        res.status(400).json({ message: 'Missing confirmation key' } as ErrorResponse);
-        return;
-      }
+    if (!key) {
+      throw new BadRequestError('Missing confirmation key');
+    }
 
-      const order = await prisma.order.findUnique({
-        where: { orderNumber },
-        include: {
-          customer: {
-            select: {
-              email: true,
-              firstName: true,
-              lastName: true,
-              isGuest: true,
-            },
+    const order = await prisma.order.findUnique({
+      where: { orderNumber },
+      include: {
+        customer: {
+          select: {
+            email: true,
+            firstName: true,
+            lastName: true,
+            isGuest: true,
           },
-          items: {
-            include: {
-              beat: {
-                select: {
-                  id: true,
-                  title: true,
-                  genre: true,
-                  bpm: true,
-                  key: true,
-                  coverArt: true,
-                },
+        },
+        items: {
+          include: {
+            beat: {
+              select: {
+                id: true,
+                title: true,
+                genre: true,
+                bpm: true,
+                key: true,
+                coverArt: true,
               },
             },
           },
         },
+      },
+    });
+
+    if (!order || !isValidToken(key, order.confirmationToken)) {
+      throw new NotFoundError('Order not found');
+    }
+
+    res.json(order);
+  })
+);
+
+interface RefundOrderRequest {
+  reason?: string;
+}
+
+/**
+ * POST /api/orders/:id/refund
+ * Refund a paid order via Square (admin only). Refunds the full payment
+ * amount and marks the order REFUNDED - this is the only place that both
+ * issues the Square refund and updates our own record of it, since the
+ * webhook only reflects refunds initiated in the Square dashboard.
+ */
+router.post(
+  '/orders/:id/refund',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const orderId = req.params.id as string;
+    const { reason } = req.body as RefundOrderRequest;
+
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+
+    if (!order) {
+      throw new NotFoundError('Order not found');
+    }
+
+    if (!order.squarePaymentId) {
+      throw new BadRequestError('Order has no associated payment to refund');
+    }
+
+    if (order.paymentStatus === 'REFUNDED') {
+      throw new ConflictError('Order has already been refunded');
+    }
+
+    if (order.paymentStatus !== 'PAID') {
+      throw new BadRequestError(
+        `Cannot refund an order with payment status ${order.paymentStatus}`
+      );
+    }
+
+    try {
+      const refundResponse = await squareClient.refunds.refundPayment({
+        idempotencyKey: `order-refund-${order.id}`,
+        paymentId: order.squarePaymentId,
+        amountMoney: {
+          amount: BigInt(Math.round(order.total * 100)),
+          currency: 'USD',
+        },
+        reason: reason || `Refund for order ${order.orderNumber}`,
       });
 
-      if (!order || !isValidToken(key, order.confirmationToken)) {
-        res.status(404).json({ message: 'Order not found' } as ErrorResponse);
-        return;
+      if (
+        refundResponse.refund?.status === 'REJECTED' ||
+        refundResponse.refund?.status === 'FAILED'
+      ) {
+        throw new InternalError(
+          `Square rejected the refund: ${refundResponse.refund.status}`
+        );
       }
 
-      res.json(order);
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: 'CANCELLED', paymentStatus: 'REFUNDED' },
+      });
+
+      console.log(
+        `[REFUND] Order ${order.orderNumber} refunded by admin, Square refund ID:`,
+        refundResponse.refund?.id
+      );
+
+      res.json({
+        success: true,
+        orderNumber: order.orderNumber,
+        refundId: refundResponse.refund?.id,
+        status: refundResponse.refund?.status,
+      });
     } catch (error) {
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      } as ErrorResponse);
+      if (error instanceof InternalError) throw error;
+
+      console.error('[REFUND] Error refunding order:', error);
+      captureError(error, { orderNumber: order.orderNumber, context: 'admin-refund-order' });
+
+      const squareError = error as { errors?: Array<{ detail?: string; code?: string }> };
+      if (squareError.errors) {
+        const firstError = squareError.errors[0];
+        throw new BadRequestError(firstError?.detail || 'Refund failed', firstError?.code);
+      }
+
+      throw new InternalError('Failed to process refund');
     }
-  }
+  })
 );
 
 // ===========================================
@@ -750,95 +838,85 @@ router.get(
  */
 router.get(
   '/orders/download/:token',
-  async (req: Request<{ token: string }>, res: Response): Promise<void> => {
-    try {
-      const { token } = req.params;
-      const order = await prisma.order.findUnique({
-        where: { downloadToken: token },
-        include: {
-          customer: true,
-          items: {
-            include: { beat: true },
-          },
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const token = req.params.token as string;
+    const order = await prisma.order.findUnique({
+      where: { downloadToken: token },
+      include: {
+        customer: true,
+        items: {
+          include: { beat: true },
         },
-      });
+      },
+    });
 
-      if (!order) {
-        res
-          .status(404)
-          .json({ message: 'Download link not found' } as ErrorResponse);
-        return;
-      }
-
-      if (order.paymentStatus !== 'PAID') {
-        res
-          .status(403)
-          .json({ message: 'Payment not completed' } as ErrorResponse);
-        return;
-      }
-
-      // Check expiry for guests
-      if (order.customer.isGuest && order.downloadExpiresAt) {
-        if (new Date() > order.downloadExpiresAt) {
-          res.status(403).json({
-            message:
-              'Download link expired. Create an account to access your purchases.',
-            expired: true,
-          });
-          return;
-        }
-      }
-
-      // Update download count
-      await prisma.order.update({
-        where: { id: order.id },
-        data: { downloadCount: { increment: 1 } },
-      });
-
-      // Return download info
-      const downloads = order.items.map((item) => {
-        const files: Array<{ type: string; url: string; filename: string }> =
-          [];
-
-        // MP3 always included
-        if (item.beat.audioFile) {
-          files.push({
-            type: 'mp3',
-            url: item.beat.audioFile,
-            filename: `${item.beat.title} - ${item.licenseName}.mp3`,
-          });
-        }
-
-        // WAV only for Unlimited license
-        if (item.licenseType === 'UNLIMITED' && item.beat.wavFile) {
-          files.push({
-            type: 'wav',
-            url: item.beat.wavFile,
-            filename: `${item.beat.title} - ${item.licenseName}.wav`,
-          });
-        }
-
-        return {
-          beatId: item.beatId,
-          beatTitle: item.beat.title,
-          license: item.licenseName,
-          files,
-        };
-      });
-
-      res.json({
-        orderNumber: order.orderNumber,
-        downloads,
-        expiresAt: order.downloadExpiresAt,
-        downloadCount: order.downloadCount + 1,
-      });
-    } catch (error) {
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      } as ErrorResponse);
+    if (!order) {
+      throw new NotFoundError('Download link not found');
     }
-  }
+
+    if (order.paymentStatus !== 'PAID') {
+      throw new ForbiddenError('Payment not completed');
+    }
+
+    // Check expiry for guests. The frontend keys off the `expired` boolean
+    // in the response body to show a distinct "link expired" UI, so this
+    // response is kept as a manual, non-standard-shaped body rather than a
+    // thrown AppError (which would drop that field).
+    if (order.customer.isGuest && order.downloadExpiresAt) {
+      if (new Date() > order.downloadExpiresAt) {
+        res.status(403).json({
+          message:
+            'Download link expired. Create an account to access your purchases.',
+          expired: true,
+        });
+        return;
+      }
+    }
+
+    // Update download count
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { downloadCount: { increment: 1 } },
+    });
+
+    // Return download info
+    const downloads = order.items.map((item) => {
+      const files: Array<{ type: string; url: string; filename: string }> =
+        [];
+
+      // MP3 always included
+      if (item.beat.audioFile) {
+        files.push({
+          type: 'mp3',
+          url: item.beat.audioFile,
+          filename: `${item.beat.title} - ${item.licenseName}.mp3`,
+        });
+      }
+
+      // WAV only for Unlimited license
+      if (item.licenseType === 'UNLIMITED' && item.beat.wavFile) {
+        files.push({
+          type: 'wav',
+          url: item.beat.wavFile,
+          filename: `${item.beat.title} - ${item.licenseName}.wav`,
+        });
+      }
+
+      return {
+        beatId: item.beatId,
+        beatTitle: item.beat.title,
+        license: item.licenseName,
+        files,
+      };
+    });
+
+    res.json({
+      orderNumber: order.orderNumber,
+      downloads,
+      expiresAt: order.downloadExpiresAt,
+      downloadCount: order.downloadCount + 1,
+    });
+  })
 );
 
 /**
@@ -847,85 +925,64 @@ router.get(
  */
 router.get(
   '/orders/download/:token/:beatId/:fileType',
-  async (req: Request<{ token: string; beatId: string; fileType: string }>, res: Response): Promise<void> => {
-    try {
-      const { token, beatId, fileType } = req.params;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const token = req.params.token as string;
+    const beatId = req.params.beatId as string;
+    const fileType = req.params.fileType as string;
 
-      const order = await prisma.order.findUnique({
-        where: { downloadToken: token },
-        include: {
-          customer: true,
-          items: {
-            where: { beatId: beatId },
-            include: { beat: true },
-          },
+    const order = await prisma.order.findUnique({
+      where: { downloadToken: token },
+      include: {
+        customer: true,
+        items: {
+          where: { beatId: beatId },
+          include: { beat: true },
         },
-      });
+      },
+    });
 
-      if (!order) {
-        res
-          .status(404)
-          .json({ message: 'Download link not found' } as ErrorResponse);
-        return;
-      }
-
-      if (order.paymentStatus !== 'PAID') {
-        res
-          .status(403)
-          .json({ message: 'Payment not completed' } as ErrorResponse);
-        return;
-      }
-
-      // Check expiry for guests
-      if (order.customer.isGuest && order.downloadExpiresAt) {
-        if (new Date() > order.downloadExpiresAt) {
-          res
-            .status(403)
-            .json({ message: 'Download link expired' } as ErrorResponse);
-          return;
-        }
-      }
-
-      const item = order.items[0];
-      if (!item) {
-        res
-          .status(404)
-          .json({ message: 'Beat not found in order' } as ErrorResponse);
-        return;
-      }
-
-      // Validate file access based on license
-      let filePath: string | null = null;
-      if (fileType === 'mp3' && item.beat.audioFile) {
-        filePath = path.join(process.cwd(), item.beat.audioFile);
-      } else if (
-        fileType === 'wav' &&
-        item.licenseType === 'UNLIMITED' &&
-        item.beat.wavFile
-      ) {
-        filePath = path.join(process.cwd(), item.beat.wavFile);
-      } else {
-        res.status(403).json({
-          message: 'File not available for your license',
-        } as ErrorResponse);
-        return;
-      }
-
-      // Check if file exists
-      if (!fs.existsSync(filePath)) {
-        res.status(404).json({ message: 'File not found' } as ErrorResponse);
-        return;
-      }
-
-      const filename = `${item.beat.title} - ${item.licenseName}.${fileType}`;
-      res.download(filePath, filename);
-    } catch (error) {
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      } as ErrorResponse);
+    if (!order) {
+      throw new NotFoundError('Download link not found');
     }
-  }
+
+    if (order.paymentStatus !== 'PAID') {
+      throw new ForbiddenError('Payment not completed');
+    }
+
+    // Check expiry for guests
+    if (order.customer.isGuest && order.downloadExpiresAt) {
+      if (new Date() > order.downloadExpiresAt) {
+        throw new ForbiddenError('Download link expired');
+      }
+    }
+
+    const item = order.items[0];
+    if (!item) {
+      throw new NotFoundError('Beat not found in order');
+    }
+
+    // Validate file access based on license
+    let filePath: string | null = null;
+    if (fileType === 'mp3' && item.beat.audioFile) {
+      filePath = path.join(process.cwd(), item.beat.audioFile);
+    } else if (
+      fileType === 'wav' &&
+      item.licenseType === 'UNLIMITED' &&
+      item.beat.wavFile
+    ) {
+      filePath = path.join(process.cwd(), item.beat.wavFile);
+    } else {
+      throw new ForbiddenError('File not available for your license');
+    }
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      throw new NotFoundError('File not found');
+    }
+
+    const filename = `${item.beat.title} - ${item.licenseName}.${fileType}`;
+    res.download(filePath, filename);
+  })
 );
 
 export default router;

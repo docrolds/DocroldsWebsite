@@ -61,7 +61,6 @@ model Customer {
   city             String?
   state            String?
   profilePicture   String?    // URL to uploaded image
-  stripeCustomerId String?    @unique
   isGuest          Boolean    @default(true)
   isBlocked        Boolean    @default(false)
   blockedAt        DateTime?
@@ -86,8 +85,6 @@ model Order {
   customer          Customer    @relation(fields: [customerId], references: [id])
   status            String      @default("PENDING") // PENDING, COMPLETED, CANCELLED, REFUNDED
   paymentStatus     String      @default("PENDING") // PENDING, PAID, FAILED, REFUNDED
-  stripeSessionId   String?     @unique
-  stripePaymentId   String?
   squarePaymentId   String?     // Square payment ID
   subtotal          Float
   total             Float

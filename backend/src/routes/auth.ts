@@ -12,6 +12,7 @@ import {
   requireAdmin,
   generateAdminToken,
   generateCustomerToken,
+  authLimiter,
 } from '../middleware';
 import {
   asyncHandler,
@@ -76,7 +77,7 @@ router.post(
       );
     }
 
-    const hashedPassword = await bcrypt.hash(config.auth.adminPassword, 10);
+    const hashedPassword = await bcrypt.hash(config.auth.adminPassword, 12);
 
     const result = await prisma.user.create({
       data: {
@@ -106,10 +107,10 @@ router.post(
 /**
  * POST /api/auth/login
  * Admin login endpoint
- * Rate limited externally by loginLimiter middleware
  */
 router.post(
   '/login',
+  authLimiter,
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { username, password } = req.body as AdminLoginRequest;
 
@@ -191,6 +192,7 @@ interface UnifiedLoginResponse {
  */
 router.post(
   '/unified-login',
+  authLimiter,
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { email, password } = req.body as UnifiedLoginRequest;
 
@@ -343,7 +345,7 @@ router.post(
       throw new ConflictError('Username already exists');
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
     const newUser = await prisma.user.create({
       data: {
         username,
@@ -431,7 +433,7 @@ router.put(
     if (email) updateData.email = email;
     if (role) updateData.role = role;
     if (password) {
-      updateData.password = await bcrypt.hash(password, 10);
+      updateData.password = await bcrypt.hash(password, 12);
     }
 
     const updatedUser = await prisma.user.update({

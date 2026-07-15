@@ -262,6 +262,8 @@ export default function CheckoutPage(): ReactNode {
               ))}
             </div>
 
+            {/* TODO(tax): no sales tax line item - see backend TODO(tax) notes
+                in orders.ts/bookings.ts before adding this. */}
             <div className="checkout-totals-v2">
               <div className="checkout-subtotal">
                 <span>Subtotal</span>

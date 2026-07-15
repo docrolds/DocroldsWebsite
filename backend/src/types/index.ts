@@ -44,7 +44,6 @@ export interface Customer {
   city: string | null;
   state: string | null;
   profilePicture: string | null;
-  stripeCustomerId: string | null;
   isGuest: boolean;
   isBlocked: boolean;
   blockedAt: Date | null;
@@ -56,7 +55,7 @@ export interface Customer {
 /**
  * Customer without sensitive data
  */
-export type SafeCustomer = Omit<Customer, 'password' | 'stripeCustomerId'>;
+export type SafeCustomer = Omit<Customer, 'password'>;
 
 /**
  * Customer with relations
@@ -113,8 +112,6 @@ export interface Order {
   customerId: string;
   status: string;
   paymentStatus: string;
-  stripeSessionId: string | null;
-  stripePaymentId: string | null;
   squarePaymentId: string | null;
   subtotal: number;
   total: number;

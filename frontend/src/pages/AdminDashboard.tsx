@@ -472,6 +472,28 @@ export default function AdminDashboard(): JSX.Element | null {
     }
   };
 
+  const refundOrder = async (order: Order): Promise<void> => {
+    if (!confirm(`Refund order #${order.orderNumber} for ${formatCurrency(order.totalAmount)}? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`${API_URL}/orders/${order.id}/refund`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data: { message?: string } = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to refund order');
+      }
+      alert('Order refunded successfully');
+      fetchAllData();
+    } catch (err) {
+      const error = err as Error;
+      alert(error.message || 'Failed to refund order');
+    }
+  };
+
   const deleteCustomer = async (id: string): Promise<void> => {
     if (!confirm('Are you sure you want to delete this customer? This will also delete all their orders, comments, likes, and playlists. This action cannot be undone.')) return;
     try {
@@ -588,6 +610,28 @@ export default function AdminDashboard(): JSX.Element | null {
       setBookings(bookings.filter((b: Booking) => b.id !== bookingId));
     } catch (err) {
       alert('Failed to cancel booking');
+    }
+  };
+
+  const refundBooking = async (booking: Booking): Promise<void> => {
+    if (!confirm(`Refund the deposit (${formatCurrency(booking.depositAmount)}) for booking #${booking.bookingNumber}? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`${API_URL}/bookings/${booking.id}/refund`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data: { message?: string } = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to refund booking deposit');
+      }
+      alert('Booking deposit refunded successfully');
+      fetchAllData();
+    } catch (err) {
+      const error = err as Error;
+      alert(error.message || 'Failed to refund booking deposit');
     }
   };
 
@@ -1252,6 +1296,15 @@ export default function AdminDashboard(): JSX.Element | null {
                               >
                                 <i className="fas fa-clock"></i>
                               </button>
+                              {order.paymentStatus === 'PAID' && (
+                                <button
+                                  className="icon-btn danger"
+                                  onClick={() => refundOrder(order)}
+                                  title="Refund Order"
+                                >
+                                  <i className="fas fa-undo"></i>
+                                </button>
+                              )}
                               <button
                                 className="icon-btn danger"
                                 onClick={() => deleteOrder(order.id)}
@@ -1424,6 +1477,15 @@ export default function AdminDashboard(): JSX.Element | null {
                                   title="Cancel Booking"
                                 >
                                   <i className="fas fa-times"></i>
+                                </button>
+                              )}
+                              {booking.depositPaid && (
+                                <button
+                                  className="icon-btn danger"
+                                  onClick={() => refundBooking(booking)}
+                                  title="Refund Deposit"
+                                >
+                                  <i className="fas fa-undo"></i>
                                 </button>
                               )}
                             </div>

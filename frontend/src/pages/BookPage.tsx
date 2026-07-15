@@ -94,7 +94,11 @@ interface SquareCard {
 // Constants
 // ============================================
 
-const MIXING_TIERS: MixingTier[] = [
+// Fallback defaults if /api/bookings/pricing-config can't be reached -
+// identical to the server's own defaults, so the page degrades gracefully
+// rather than breaking. The server-computed price is always what's
+// actually charged regardless of what's displayed here.
+const DEFAULT_MIXING_TIERS: MixingTier[] = [
   {
     id: 'BASIC',
     name: 'Basic Mix',
@@ -133,7 +137,7 @@ const MIXING_TIERS: MixingTier[] = [
   }
 ];
 
-const CONSULTING_OPTIONS: ConsultingOption[] = [
+const DEFAULT_CONSULTING_OPTIONS: ConsultingOption[] = [
   {
     id: '30min',
     name: '30 Minute Call',
@@ -152,6 +156,32 @@ const CONSULTING_OPTIONS: ConsultingOption[] = [
 
 const MAX_UPLOAD_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 const ACCEPTED_FILE_TYPES = '.wav,.mp3,.aiff,.flac,.zip';
+
+interface PricingConfig {
+  deposit: number;
+  recording: {
+    rateUnder5Hours: number;
+    rate5to9Hours: number;
+    rate10PlusHours: number;
+  };
+  mixing: {
+    tiers: Record<string, number>;
+    inPersonStudioHours: number;
+    inPersonHourlyRate: number;
+  };
+  consulting: Record<string, number>;
+}
+
+const DEFAULT_PRICING_CONFIG: PricingConfig = {
+  deposit: 25,
+  recording: { rateUnder5Hours: 80, rate5to9Hours: 70, rate10PlusHours: 65 },
+  mixing: {
+    tiers: { BASIC: 75, STANDARD: 100, PRO: 200, PREMIUM: 300 },
+    inPersonStudioHours: 2,
+    inPersonHourlyRate: 80,
+  },
+  consulting: { '30min': 50, '60min': 85 },
+};
 
 // ============================================
 // BookPage Component
@@ -173,6 +203,18 @@ export default function BookPage(): ReactNode {
   const [promos, setPromos] = useState<Promo[]>([]);
   const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
   const [consultingDuration, setConsultingDuration] = useState<ConsultingDuration | null>(null);
+
+  // Pricing (fetched from the server so displayed prices can't drift from
+  // what's actually charged; falls back to hardcoded defaults if unreachable)
+  const [pricingConfig, setPricingConfig] = useState<PricingConfig>(DEFAULT_PRICING_CONFIG);
+  const mixingTiers = DEFAULT_MIXING_TIERS.map(tier => ({
+    ...tier,
+    price: pricingConfig.mixing.tiers[tier.id] ?? tier.price,
+  }));
+  const consultingOptions = DEFAULT_CONSULTING_OPTIONS.map(option => ({
+    ...option,
+    price: pricingConfig.consulting[option.id] ?? option.price,
+  }));
 
   // Beat selection (for promos)
   const [beats, setBeats] = useState<Beat[]>([]);
@@ -261,6 +303,10 @@ export default function BookPage(): ReactNode {
   }, [step]);
 
   useEffect(() => {
+    fetchPricingConfig();
+  }, []);
+
+  useEffect(() => {
     if (category === 'promo') {
       fetchPromos();
     }
@@ -281,6 +327,18 @@ export default function BookPage(): ReactNode {
   // ============================================
   // Data Fetching
   // ============================================
+
+  const fetchPricingConfig = async (): Promise<void> => {
+    try {
+      const res = await fetch(`${API_URL}/bookings/pricing-config`);
+      if (res.ok) {
+        const data = await res.json();
+        setPricingConfig(data);
+      }
+    } catch (err) {
+      console.error('Error fetching pricing config:', err);
+    }
+  };
 
   const fetchPromos = async (): Promise<void> => {
     try {
@@ -394,30 +452,36 @@ export default function BookPage(): ReactNode {
   // ============================================
 
   const calculatePayment = () => {
+    const deposit = pricingConfig.deposit;
+
     if (category === 'recording') {
-      const rate = hours >= 10 ? 65 : hours >= 5 ? 70 : 80;
+      const rate = hours >= 10
+        ? pricingConfig.recording.rate10PlusHours
+        : hours >= 5
+          ? pricingConfig.recording.rate5to9Hours
+          : pricingConfig.recording.rateUnder5Hours;
       const total = hours * rate;
-      return { deposit: 25, balance: total - 25, total, rate };
+      return { deposit, balance: total - deposit, total, rate };
     }
 
     if (category === 'mixing') {
-      const tier = MIXING_TIERS.find(t => t.id === mixingTier);
+      const tier = mixingTiers.find(t => t.id === mixingTier);
       if (!tier) return { deposit: 0, balance: 0, total: 0, rate: 0 };
 
       if (mixingDelivery === 'in-person') {
-        const studioHours = 2;
-        const total = tier.price + (studioHours * 80);
-        return { deposit: 25, balance: total - 25, total, rate: 80 };
+        const { inPersonStudioHours, inPersonHourlyRate } = pricingConfig.mixing;
+        const total = tier.price + (inPersonStudioHours * inPersonHourlyRate);
+        return { deposit, balance: total - deposit, total, rate: inPersonHourlyRate };
       }
       return { deposit: tier.price, balance: 0, total: tier.price, rate: 0 };
     }
 
     if (category === 'promo' && selectedPromo) {
-      return { deposit: 25, balance: selectedPromo.price - 25, total: selectedPromo.price, rate: 0 };
+      return { deposit, balance: selectedPromo.price - deposit, total: selectedPromo.price, rate: 0 };
     }
 
     if (category === 'consulting' && consultingDuration) {
-      const option = CONSULTING_OPTIONS.find(o => o.id === consultingDuration);
+      const option = consultingOptions.find(o => o.id === consultingDuration);
       if (option) {
         // Full payment upfront for consultations
         return { deposit: option.price, balance: 0, total: option.price, rate: 0 };
@@ -444,7 +508,7 @@ export default function BookPage(): ReactNode {
 
   const handleMixingTierSelect = (tierId: MixingTierId) => {
     setMixingTier(tierId);
-    const tier = MIXING_TIERS.find(t => t.id === tierId);
+    const tier = mixingTiers.find(t => t.id === tierId);
     if (tier?.allowInPerson) {
       // Show delivery choice
     } else {
@@ -648,7 +712,7 @@ export default function BookPage(): ReactNode {
         setSelectedPromo(null);
         break;
       case 'upload':
-        if (mixingTier && MIXING_TIERS.find(t => t.id === mixingTier)?.allowInPerson) {
+        if (mixingTier && mixingTiers.find(t => t.id === mixingTier)?.allowInPerson) {
           setMixingDelivery(null);
         } else {
           setStep('service');
@@ -795,7 +859,7 @@ export default function BookPage(): ReactNode {
     }
 
     if (category === 'mixing') {
-      const selectedTier = MIXING_TIERS.find(t => t.id === mixingTier);
+      const selectedTier = mixingTiers.find(t => t.id === mixingTier);
       const showDeliveryChoice = selectedTier?.allowInPerson && mixingDelivery === null;
 
       return (
@@ -811,7 +875,7 @@ export default function BookPage(): ReactNode {
 
           {!showDeliveryChoice ? (
             <div className="bp-mixing-list">
-              {MIXING_TIERS.map(tier => (
+              {mixingTiers.map(tier => (
                 <div
                   key={tier.id}
                   className={`bp-mixing-row ${mixingTier === tier.id ? 'selected' : ''}`}
@@ -939,7 +1003,7 @@ export default function BookPage(): ReactNode {
           </div>
 
           <div className="bp-consulting-list">
-            {CONSULTING_OPTIONS.map(option => (
+            {consultingOptions.map(option => (
               <div
                 key={option.id}
                 className={`bp-consulting-row ${consultingDuration === option.id ? 'selected' : ''}`}
@@ -1271,7 +1335,7 @@ export default function BookPage(): ReactNode {
   );
 
   const renderPaymentStep = (): ReactNode => {
-    const tier = MIXING_TIERS.find(t => t.id === mixingTier);
+    const tier = mixingTiers.find(t => t.id === mixingTier);
 
     return (
       <div className="bp-payment-step">
@@ -1342,7 +1406,7 @@ export default function BookPage(): ReactNode {
                   </div>
                   <div className="bp-summary-row">
                     <span>Duration</span>
-                    <span>{CONSULTING_OPTIONS.find(o => o.id === consultingDuration)?.duration}</span>
+                    <span>{consultingOptions.find(o => o.id === consultingDuration)?.duration}</span>
                   </div>
                 </>
               )}
@@ -1492,7 +1556,7 @@ export default function BookPage(): ReactNode {
         {category === 'mixing' && (
           <div className="bp-conf-row">
             <span>Service</span>
-            <span>{MIXING_TIERS.find(t => t.id === mixingTier)?.name}</span>
+            <span>{mixingTiers.find(t => t.id === mixingTier)?.name}</span>
           </div>
         )}
         {category === 'consulting' && (

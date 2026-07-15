@@ -5,8 +5,10 @@
 
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import path from 'path';
 import { config } from './config/env';
+import { Sentry, sentryEnabled } from './services/sentry';
 import { errorHandler, notFoundHandler } from './middleware';
 import {
   authRouter,
@@ -19,6 +21,10 @@ import {
 
 // Create Express app
 const app: Express = express();
+
+// Security headers (CSP disabled: this API serves no HTML and CSP would
+// only interfere with cross-origin static asset/upload responses)
+app.use(helmet({ contentSecurityPolicy: false }));
 
 // CORS configuration
 const allowedOrigins = [
@@ -93,6 +99,12 @@ app.use('/api', adminRouter);  // Team, content, photos, admin metrics
 
 // 404 handler for undefined routes
 app.use(notFoundHandler);
+
+// Reports errors to Sentry (no-op if SENTRY_DSN isn't configured) before
+// they reach our own error handler, which still owns the client response.
+if (sentryEnabled) {
+  Sentry.setupExpressErrorHandler(app);
+}
 
 // Global error handler
 app.use(errorHandler);

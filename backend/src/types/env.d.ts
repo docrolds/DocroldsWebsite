@@ -39,6 +39,9 @@ declare global {
 
       // Download Settings
       DOWNLOAD_LINK_EXPIRY_DAYS?: string;
+
+      // Error tracking
+      SENTRY_DSN?: string;
     }
   }
 }

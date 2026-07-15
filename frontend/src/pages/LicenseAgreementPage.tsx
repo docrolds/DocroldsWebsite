@@ -1,6 +1,5 @@
 import { useState, useEffect, ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useCart } from '../context/CartContext';
 
 // ============================================
 // Type Definitions
@@ -57,7 +56,6 @@ type LicenseDetails = Record<LicenseType, LicenseDetail>;
 
 export default function LicenseAgreementPage(): ReactNode {
   const [searchParams] = useSearchParams();
-  const { licenseTiers: _ } = useCart(); // Cart context for potential future use
   const [activeTab, setActiveTab] = useState<LicenseType>('standard');
 
   // Check URL params for initial tab

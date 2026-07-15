@@ -17,10 +17,8 @@ async function initializeDefaultData(): Promise<void> {
   try {
     console.log('[INIT] Checking for admin user...');
     console.log('[INIT] Admin username:', config.auth.adminUsername);
-    console.log('[INIT] Admin password length:', config.auth.adminPassword.length);
 
-    const hashedPassword = await bcrypt.hash(config.auth.adminPassword, 10);
-    console.log('[INIT] Hashed password generated');
+    const hashedPassword = await bcrypt.hash(config.auth.adminPassword, 12);
 
     const result = await prisma.user.upsert({
       where: { username: config.auth.adminUsername },

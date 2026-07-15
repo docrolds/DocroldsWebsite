@@ -29,6 +29,19 @@ import AdminDashboard from './pages/AdminDashboard';
 import AdminLoginPage from './pages/AdminLoginPage';
 import BookPage from './pages/BookPage';
 import ReschedulePage from './pages/ReschedulePage';
+import { Link } from 'react-router-dom';
+
+function NotFoundPage() {
+  return (
+    <div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-8">
+      <h1 className="text-4xl font-semibold mb-2">404</h1>
+      <p className="text-muted-foreground mb-6">This page doesn't exist.</p>
+      <Link to="/" className="text-primary underline">
+        Back to home
+      </Link>
+    </div>
+  );
+}
 
 function App() {
   const location = useLocation();
@@ -102,6 +115,7 @@ function App() {
                 <Route path="/licenses" element={<LicenseAgreementPage />} />
                 <Route path="/book" element={<BookPage />} />
                 <Route path="/reschedule/:bookingNumber" element={<ReschedulePage />} />
+                <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </main>
               <Footer />

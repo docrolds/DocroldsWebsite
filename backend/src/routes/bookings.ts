@@ -11,8 +11,17 @@ import { PrismaClient } from '@prisma/client';
 import { SquareClient, SquareEnvironment } from 'square';
 import * as crypto from 'crypto';
 import { config } from '../config/env';
-import { authenticateToken, requireAdmin } from '../middleware';
+import { authenticateToken, requireAdmin, paymentLimiter } from '../middleware';
+import {
+  asyncHandler,
+  BadRequestError,
+  ForbiddenError,
+  NotFoundError,
+  ConflictError,
+  InternalError,
+} from '../middleware';
 import { sendEmail } from '../services/email';
+import { captureError } from '../services/sentry';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -209,16 +218,14 @@ interface AvailabilityRequest {
  */
 router.post(
   '/availability',
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { startDate, endDate } = req.body as AvailabilityRequest;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { startDate, endDate } = req.body as AvailabilityRequest;
 
-      if (!startDate || !endDate) {
-        res.status(400).json({ message: 'startDate and endDate are required' });
-        return;
-      }
+    if (!startDate || !endDate) {
+      throw new BadRequestError('startDate and endDate are required');
+    }
 
-      const start = new Date(startDate);
+    const start = new Date(startDate);
       const end = new Date(endDate);
 
       // Get existing confirmed bookings in the date range
@@ -257,18 +264,11 @@ router.post(
 
       console.log(`[BOOKINGS] Generated ${availableSlots.length} available slots from ${startDate} to ${endDate}`);
 
-      res.json({
-        availabilities: availableSlots,
-        totalSlots: availableSlots.length,
-      });
-    } catch (error) {
-      console.error('[BOOKINGS] Error fetching availability:', error);
-      res.status(500).json({
-        message: 'Failed to fetch availability',
-        error: (error as Error).message,
-      });
-    }
-  }
+    res.json({
+      availabilities: availableSlots,
+      totalSlots: availableSlots.length,
+    });
+  })
 );
 
 // ===========================================
@@ -281,41 +281,33 @@ router.post(
  */
 router.get(
   '/promos',
-  async (_req: Request, res: Response): Promise<void> => {
-    try {
-      const now = new Date();
+  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
+    const now = new Date();
 
-      const promos = await prisma.promo.findMany({
-        where: {
-          active: true,
-          OR: [
-            { validFrom: null, validUntil: null },
-            {
-              validFrom: { lte: now },
-              validUntil: { gte: now },
-            },
-            {
-              validFrom: { lte: now },
-              validUntil: null,
-            },
-            {
-              validFrom: null,
-              validUntil: { gte: now },
-            },
-          ],
-        },
-        orderBy: { price: 'asc' },
-      });
+    const promos = await prisma.promo.findMany({
+      where: {
+        active: true,
+        OR: [
+          { validFrom: null, validUntil: null },
+          {
+            validFrom: { lte: now },
+            validUntil: { gte: now },
+          },
+          {
+            validFrom: { lte: now },
+            validUntil: null,
+          },
+          {
+            validFrom: null,
+            validUntil: { gte: now },
+          },
+        ],
+      },
+      orderBy: { price: 'asc' },
+    });
 
-      res.json(promos);
-    } catch (error) {
-      console.error('[BOOKINGS] Error fetching promos:', error);
-      res.status(500).json({
-        message: 'Failed to fetch promos',
-        error: (error as Error).message,
-      });
-    }
-  }
+    res.json(promos);
+  })
 );
 
 // ===========================================
@@ -348,6 +340,32 @@ const DEFAULT_DEPOSIT = 25;
 const IN_PERSON_MIXING_STUDIO_HOURS = 2;
 const IN_PERSON_MIXING_HOURLY_RATE = 80;
 
+/**
+ * GET /api/bookings/pricing-config
+ * Returns the pricing constants used by calculateBookingPrice() below, so
+ * the frontend can display accurate prices without maintaining its own
+ * hardcoded copy that can drift out of sync with what's actually charged.
+ */
+router.get(
+  '/pricing-config',
+  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
+    res.json({
+      deposit: DEFAULT_DEPOSIT,
+      recording: {
+        rateUnder5Hours: 80,
+        rate5to9Hours: 70,
+        rate10PlusHours: 65,
+      },
+      mixing: {
+        tiers: Object.fromEntries(MIXING_TIERS.map((t) => [t.id, t.price])),
+        inPersonStudioHours: IN_PERSON_MIXING_STUDIO_HOURS,
+        inPersonHourlyRate: IN_PERSON_MIXING_HOURLY_RATE,
+      },
+      consulting: CONSULTING_PRICES,
+    });
+  })
+);
+
 interface BookingPricingInput {
   category: string;
   hours?: number;
@@ -366,6 +384,11 @@ interface BookingPricingResult {
  * Computes the deposit/total for a booking from server-trusted inputs.
  * Returns null if the combination of inputs doesn't resolve to a valid,
  * known price (caller should reject the booking in that case).
+ *
+ * TODO(tax): no sales tax is calculated or collected on studio services
+ * here. Confirm with an accountant whether these services are taxable
+ * before adding it - this is a compliance decision, not just a missing
+ * feature.
  */
 async function calculateBookingPrice(
   input: BookingPricingInput
@@ -438,76 +461,81 @@ interface BookingCreateRequest {
  */
 router.post(
   '/create',
-  async (req: Request, res: Response): Promise<void> => {
+  paymentLimiter,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const {
+      category,
+      hours,
+      mixingTier,
+      mixingDelivery,
+      consultingDuration,
+      promoId,
+      beatId,
+      startAt,
+      customer,
+      sourceId,
+    } = req.body as BookingCreateRequest;
+
+    // Validate required fields
+    if (!customer?.name || !customer?.email || !customer?.phone) {
+      throw new BadRequestError('Customer name, email, and phone are required');
+    }
+
+    if (!sourceId) {
+      throw new BadRequestError('Payment source is required');
+    }
+
+    // Price is always computed server-side from the booking inputs -
+    // never trust a client-submitted amount for what gets charged.
+    const pricing = await calculateBookingPrice({
+      category,
+      hours,
+      mixingTier,
+      mixingDelivery,
+      consultingDuration,
+      promoId,
+    });
+
+    if (!pricing) {
+      throw new BadRequestError('Invalid booking selection - could not determine price');
+    }
+
+    const depositAmount = pricing.deposit;
+    const totalAmount = pricing.total;
+
+    // Generate booking number
+    const bookingNumber = await generateBookingNumber();
+
+    // Calculate balance
+    const balanceAmount = totalAmount - depositAmount;
+
+    // Find or create customer
+    let existingCustomer = await prisma.customer.findUnique({
+      where: { email: customer.email },
+    });
+
+    if (!existingCustomer) {
+      const nameParts = customer.name.split(' ');
+      existingCustomer = await prisma.customer.create({
+        data: {
+          email: customer.email,
+          firstName: nameParts[0] || null,
+          lastName: nameParts.slice(1).join(' ') || null,
+          phone: customer.phone,
+          stageName: customer.artistName || null,
+          isGuest: true,
+        },
+      });
+    }
+
+    // The Square payment call and everything that follows it are wrapped in
+    // their own try/catch (rather than relying on the outer asyncHandler)
+    // because Square failures need a bespoke, user-facing response derived
+    // from Square's error shape - the centralized handler's generic body
+    // would lose that detail. Genuine unexpected/internal failures still
+    // fall through to a thrown InternalError so the raw error message is
+    // never leaked to the client.
     try {
-      const {
-        category,
-        hours,
-        mixingTier,
-        mixingDelivery,
-        consultingDuration,
-        promoId,
-        beatId,
-        startAt,
-        customer,
-        sourceId,
-      } = req.body as BookingCreateRequest;
-
-      // Validate required fields
-      if (!customer?.name || !customer?.email || !customer?.phone) {
-        res.status(400).json({ message: 'Customer name, email, and phone are required' });
-        return;
-      }
-
-      if (!sourceId) {
-        res.status(400).json({ message: 'Payment source is required' });
-        return;
-      }
-
-      // Price is always computed server-side from the booking inputs -
-      // never trust a client-submitted amount for what gets charged.
-      const pricing = await calculateBookingPrice({
-        category,
-        hours,
-        mixingTier,
-        mixingDelivery,
-        consultingDuration,
-        promoId,
-      });
-
-      if (!pricing) {
-        res.status(400).json({ message: 'Invalid booking selection - could not determine price' });
-        return;
-      }
-
-      const depositAmount = pricing.deposit;
-      const totalAmount = pricing.total;
-
-      // Generate booking number
-      const bookingNumber = await generateBookingNumber();
-
-      // Calculate balance
-      const balanceAmount = totalAmount - depositAmount;
-
-      // Find or create customer
-      let existingCustomer = await prisma.customer.findUnique({
-        where: { email: customer.email },
-      });
-
-      if (!existingCustomer) {
-        const nameParts = customer.name.split(' ');
-        existingCustomer = await prisma.customer.create({
-          data: {
-            email: customer.email,
-            firstName: nameParts[0] || null,
-            lastName: nameParts.slice(1).join(' ') || null,
-            phone: customer.phone,
-            stageName: customer.artistName || null,
-            isGuest: true,
-          },
-        });
-      }
-
       // Process deposit payment with Square
       console.log('[BOOKINGS] Processing deposit payment:', depositAmount * 100, 'cents');
 
@@ -578,6 +606,7 @@ router.post(
       });
     } catch (error) {
       console.error('[BOOKINGS] Error creating booking:', error);
+      captureError(error, { bookingNumber, context: 'booking-create' });
 
       // Handle Square API errors
       const squareError = error as { errors?: Array<{ detail?: string; code?: string }> };
@@ -591,13 +620,9 @@ router.post(
         return;
       }
 
-      res.status(500).json({
-        success: false,
-        message: 'Failed to create booking',
-        error: (error as Error).message,
-      });
+      throw new InternalError('Failed to create booking');
     }
-  }
+  })
 );
 
 // ===========================================
@@ -767,6 +792,7 @@ async function sendBookingConfirmationEmail(booking: BookingForEmail): Promise<v
     });
   } catch (error) {
     console.error('[BOOKINGS] Failed to send confirmation email:', (error as Error).message);
+    captureError(error, { bookingNumber: booking.bookingNumber, context: 'booking-confirmation-email' });
   }
 }
 
@@ -782,55 +808,47 @@ router.get(
   '/',
   authenticateToken,
   requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { status, startDate, endDate } = req.query;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { status, startDate, endDate } = req.query;
 
-      interface WhereClause {
-        status?: string;
-        scheduledAt?: {
-          gte: Date;
-          lte: Date;
-        };
-      }
-
-      const where: WhereClause = {};
-
-      if (status && typeof status === 'string') {
-        where.status = status;
-      }
-
-      if (startDate && endDate) {
-        where.scheduledAt = {
-          gte: new Date(startDate as string),
-          lte: new Date(endDate as string),
-        };
-      }
-
-      const bookings = await prisma.booking.findMany({
-        where,
-        include: {
-          customer: {
-            select: {
-              email: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-          promo: true,
-        },
-        orderBy: { scheduledAt: 'asc' },
-      });
-
-      res.json(bookings);
-    } catch (error) {
-      console.error('[BOOKINGS] Error fetching bookings:', error);
-      res.status(500).json({
-        message: 'Failed to fetch bookings',
-        error: (error as Error).message,
-      });
+    interface WhereClause {
+      status?: string;
+      scheduledAt?: {
+        gte: Date;
+        lte: Date;
+      };
     }
-  }
+
+    const where: WhereClause = {};
+
+    if (status && typeof status === 'string') {
+      where.status = status;
+    }
+
+    if (startDate && endDate) {
+      where.scheduledAt = {
+        gte: new Date(startDate as string),
+        lte: new Date(endDate as string),
+      };
+    }
+
+    const bookings = await prisma.booking.findMany({
+      where,
+      include: {
+        customer: {
+          select: {
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        promo: true,
+      },
+      orderBy: { scheduledAt: 'asc' },
+    });
+
+    res.json(bookings);
+  })
 );
 
 /**
@@ -841,31 +859,23 @@ router.get(
   '/:id',
   authenticateToken,
   requireAdmin,
-  async (req: Request<{ id: string }>, res: Response): Promise<void> => {
-    try {
-      const { id } = req.params;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
 
-      const booking = await prisma.booking.findUnique({
-        where: { id },
-        include: {
-          customer: true,
-          promo: true,
-        },
-      });
+    const booking = await prisma.booking.findUnique({
+      where: { id },
+      include: {
+        customer: true,
+        promo: true,
+      },
+    });
 
-      if (!booking) {
-        res.status(404).json({ message: 'Booking not found' });
-        return;
-      }
-
-      res.json(booking);
-    } catch (error) {
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      });
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
     }
-  }
+
+    res.json(booking);
+  })
 );
 
 /**
@@ -876,33 +886,110 @@ router.put(
   '/:id/status',
   authenticateToken,
   requireAdmin,
-  async (req: Request<{ id: string }>, res: Response): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const { status, notes } = req.body;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
+    const { status, notes } = req.body;
 
-      const validStatuses = ['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
-      if (!validStatuses.includes(status)) {
-        res.status(400).json({ message: 'Invalid status' });
-        return;
+    const validStatuses = ['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
+    if (!validStatuses.includes(status)) {
+      throw new BadRequestError('Invalid status');
+    }
+
+    const booking = await prisma.booking.update({
+      where: { id },
+      data: {
+        status,
+        notes: notes || undefined,
+      },
+    });
+
+    res.json(booking);
+  })
+);
+
+interface RefundBookingRequest {
+  reason?: string;
+}
+
+/**
+ * POST /api/bookings/:id/refund
+ * Refund a booking's deposit via Square (admin only). Only refunds the
+ * deposit - the in-studio balance payment (if any) isn't tracked by this
+ * system and has no corresponding Square payment ID to refund here.
+ */
+router.post(
+  '/:id/refund',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
+    const { reason } = req.body as RefundBookingRequest;
+
+    const booking = await prisma.booking.findUnique({ where: { id } });
+
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
+    }
+
+    if (!booking.depositPaid || !booking.depositPaymentId) {
+      throw new BadRequestError('Booking has no paid deposit to refund');
+    }
+
+    if (booking.status === 'CANCELLED' && !booking.depositPaid) {
+      throw new ConflictError('Booking deposit has already been refunded');
+    }
+
+    try {
+      const refundResponse = await squareClient.refunds.refundPayment({
+        idempotencyKey: `booking-refund-${booking.id}`,
+        paymentId: booking.depositPaymentId,
+        amountMoney: {
+          amount: BigInt(Math.round(booking.depositAmount * 100)),
+          currency: 'USD',
+        },
+        reason: reason || `Deposit refund for booking ${booking.bookingNumber}`,
+      });
+
+      if (
+        refundResponse.refund?.status === 'REJECTED' ||
+        refundResponse.refund?.status === 'FAILED'
+      ) {
+        throw new InternalError(
+          `Square rejected the refund: ${refundResponse.refund.status}`
+        );
       }
 
-      const booking = await prisma.booking.update({
-        where: { id },
-        data: {
-          status,
-          notes: notes || undefined,
-        },
+      await prisma.booking.update({
+        where: { id: booking.id },
+        data: { status: 'CANCELLED', depositPaid: false },
       });
 
-      res.json(booking);
-    } catch (error) {
-      res.status(500).json({
-        message: 'Failed to update booking',
-        error: (error as Error).message,
+      console.log(
+        `[REFUND] Booking ${booking.bookingNumber} deposit refunded by admin, Square refund ID:`,
+        refundResponse.refund?.id
+      );
+
+      res.json({
+        success: true,
+        bookingNumber: booking.bookingNumber,
+        refundId: refundResponse.refund?.id,
+        status: refundResponse.refund?.status,
       });
+    } catch (error) {
+      if (error instanceof InternalError) throw error;
+
+      console.error('[REFUND] Error refunding booking:', error);
+      captureError(error, { bookingNumber: booking.bookingNumber, context: 'admin-refund-booking' });
+
+      const squareError = error as { errors?: Array<{ detail?: string; code?: string }> };
+      if (squareError.errors) {
+        const firstError = squareError.errors[0];
+        throw new BadRequestError(firstError?.detail || 'Refund failed', firstError?.code);
+      }
+
+      throw new InternalError('Failed to process refund');
     }
-  }
+  })
 );
 
 // ===========================================
@@ -917,69 +1004,55 @@ router.put(
  */
 router.get(
   '/reschedule/:bookingNumber',
-  async (req: Request<{ bookingNumber: string }>, res: Response): Promise<void> => {
-    try {
-      const { bookingNumber } = req.params;
-      const key = typeof req.query.key === 'string' ? req.query.key : undefined;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const bookingNumber = req.params.bookingNumber as string;
+    const key = typeof req.query.key === 'string' ? req.query.key : undefined;
 
-      if (!key) {
-        res.status(400).json({ message: 'Missing reschedule key' });
-        return;
-      }
-
-      const booking = await prisma.booking.findUnique({
-        where: { bookingNumber },
-        select: {
-          id: true,
-          bookingNumber: true,
-          rescheduleToken: true,
-          name: true,
-          email: true,
-          category: true,
-          hours: true,
-          mixingTier: true,
-          scheduledAt: true,
-          status: true,
-          sessionPrice: true,
-          depositAmount: true,
-          balanceAmount: true,
-        },
-      });
-
-      if (!booking || !isValidToken(key, booking.rescheduleToken)) {
-        res.status(404).json({ message: 'Booking not found' });
-        return;
-      }
-
-      // Can't reschedule completed or cancelled bookings
-      if (booking.status === 'COMPLETED' || booking.status === 'CANCELLED') {
-        res.status(400).json({
-          message: `Cannot reschedule a ${booking.status.toLowerCase()} booking`
-        });
-        return;
-      }
-
-      // Check 24-hour rule
-      if (booking.scheduledAt) {
-        const hoursUntilSession = (booking.scheduledAt.getTime() - Date.now()) / (1000 * 60 * 60);
-        if (hoursUntilSession < 24) {
-          res.status(400).json({
-            message: 'Cannot reschedule within 24 hours of your session',
-            hoursRemaining: Math.max(0, hoursUntilSession).toFixed(1)
-          });
-          return;
-        }
-      }
-
-      const { rescheduleToken: _rescheduleToken, ...bookingResponse } = booking;
-      res.json(bookingResponse);
-    } catch (error) {
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      });
+    if (!key) {
+      throw new BadRequestError('Missing reschedule key');
     }
-  }
+
+    const booking = await prisma.booking.findUnique({
+      where: { bookingNumber },
+      select: {
+        id: true,
+        bookingNumber: true,
+        rescheduleToken: true,
+        name: true,
+        email: true,
+        category: true,
+        hours: true,
+        mixingTier: true,
+        scheduledAt: true,
+        status: true,
+        sessionPrice: true,
+        depositAmount: true,
+        balanceAmount: true,
+      },
+    });
+
+    if (!booking || !isValidToken(key, booking.rescheduleToken)) {
+      throw new NotFoundError('Booking not found');
+    }
+
+    // Can't reschedule completed or cancelled bookings
+    if (booking.status === 'COMPLETED' || booking.status === 'CANCELLED') {
+      throw new BadRequestError(`Cannot reschedule a ${booking.status.toLowerCase()} booking`);
+    }
+
+    // Check 24-hour rule
+    if (booking.scheduledAt) {
+      const hoursUntilSession = (booking.scheduledAt.getTime() - Date.now()) / (1000 * 60 * 60);
+      if (hoursUntilSession < 24) {
+        throw new BadRequestError(
+          `Cannot reschedule within 24 hours of your session (${Math.max(0, hoursUntilSession).toFixed(1)} hours remaining)`
+        );
+      }
+    }
+
+    const { rescheduleToken: _rescheduleToken, ...bookingResponse } = booking;
+    res.json(bookingResponse);
+  })
 );
 
 /**
@@ -988,106 +1061,86 @@ router.get(
  */
 router.put(
   '/reschedule/:bookingNumber',
-  async (req: Request<{ bookingNumber: string }>, res: Response): Promise<void> => {
-    try {
-      const { bookingNumber } = req.params;
-      const { newDateTime, email } = req.body;
-      const key = typeof req.query.key === 'string' ? req.query.key : undefined;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const bookingNumber = req.params.bookingNumber as string;
+    const { newDateTime, email } = req.body;
+    const key = typeof req.query.key === 'string' ? req.query.key : undefined;
 
-      if (!newDateTime) {
-        res.status(400).json({ message: 'New date/time is required' });
-        return;
-      }
-
-      if (!key) {
-        res.status(400).json({ message: 'Missing reschedule key' });
-        return;
-      }
-
-      const booking = await prisma.booking.findUnique({
-        where: { bookingNumber },
-      });
-
-      if (!booking || !isValidToken(key, booking.rescheduleToken)) {
-        res.status(404).json({ message: 'Booking not found' });
-        return;
-      }
-
-      // Verify email matches (simple security)
-      if (email && booking.email.toLowerCase() !== email.toLowerCase()) {
-        res.status(403).json({ message: 'Email does not match booking' });
-        return;
-      }
-
-      // Can't reschedule completed or cancelled bookings
-      if (booking.status === 'COMPLETED' || booking.status === 'CANCELLED') {
-        res.status(400).json({
-          message: `Cannot reschedule a ${booking.status.toLowerCase()} booking`
-        });
-        return;
-      }
-
-      // Check 24-hour rule for current booking
-      if (booking.scheduledAt) {
-        const hoursUntilSession = (booking.scheduledAt.getTime() - Date.now()) / (1000 * 60 * 60);
-        if (hoursUntilSession < 24) {
-          res.status(400).json({
-            message: 'Cannot reschedule within 24 hours of your session'
-          });
-          return;
-        }
-      }
-
-      // Verify new time is in the future
-      const newTime = new Date(newDateTime);
-      if (newTime.getTime() <= Date.now()) {
-        res.status(400).json({ message: 'New time must be in the future' });
-        return;
-      }
-
-      // Check if new slot is available
-      const conflictingBooking = await prisma.booking.findFirst({
-        where: {
-          scheduledAt: newTime,
-          status: { in: ['PENDING', 'CONFIRMED'] },
-          id: { not: booking.id },
-        },
-      });
-
-      if (conflictingBooking) {
-        res.status(400).json({ message: 'This time slot is no longer available' });
-        return;
-      }
-
-      // Update the booking
-      const updatedBooking = await prisma.booking.update({
-        where: { bookingNumber },
-        data: {
-          scheduledAt: newTime,
-          notes: booking.notes
-            ? `${booking.notes}\nRescheduled from ${booking.scheduledAt?.toISOString()} on ${new Date().toISOString()}`
-            : `Rescheduled from ${booking.scheduledAt?.toISOString()} on ${new Date().toISOString()}`,
-        },
-      });
-
-      // Send reschedule confirmation email
-      await sendRescheduleEmail(updatedBooking, booking.scheduledAt);
-
-      console.log(`[BOOKINGS] Booking ${bookingNumber} rescheduled to ${newTime.toISOString()}`);
-
-      res.json({
-        success: true,
-        message: 'Booking rescheduled successfully',
-        newDateTime: newTime.toISOString(),
-      });
-    } catch (error) {
-      console.error('[BOOKINGS] Error rescheduling:', error);
-      res.status(500).json({
-        message: 'Failed to reschedule booking',
-        error: (error as Error).message,
-      });
+    if (!newDateTime) {
+      throw new BadRequestError('New date/time is required');
     }
-  }
+
+    if (!key) {
+      throw new BadRequestError('Missing reschedule key');
+    }
+
+    const booking = await prisma.booking.findUnique({
+      where: { bookingNumber },
+    });
+
+    if (!booking || !isValidToken(key, booking.rescheduleToken)) {
+      throw new NotFoundError('Booking not found');
+    }
+
+    // Verify email matches (simple security)
+    if (email && booking.email.toLowerCase() !== email.toLowerCase()) {
+      throw new ForbiddenError('Email does not match booking');
+    }
+
+    // Can't reschedule completed or cancelled bookings
+    if (booking.status === 'COMPLETED' || booking.status === 'CANCELLED') {
+      throw new BadRequestError(`Cannot reschedule a ${booking.status.toLowerCase()} booking`);
+    }
+
+    // Check 24-hour rule for current booking
+    if (booking.scheduledAt) {
+      const hoursUntilSession = (booking.scheduledAt.getTime() - Date.now()) / (1000 * 60 * 60);
+      if (hoursUntilSession < 24) {
+        throw new BadRequestError('Cannot reschedule within 24 hours of your session');
+      }
+    }
+
+    // Verify new time is in the future
+    const newTime = new Date(newDateTime);
+    if (newTime.getTime() <= Date.now()) {
+      throw new BadRequestError('New time must be in the future');
+    }
+
+    // Check if new slot is available
+    const conflictingBooking = await prisma.booking.findFirst({
+      where: {
+        scheduledAt: newTime,
+        status: { in: ['PENDING', 'CONFIRMED'] },
+        id: { not: booking.id },
+      },
+    });
+
+    if (conflictingBooking) {
+      throw new BadRequestError('This time slot is no longer available');
+    }
+
+    // Update the booking
+    const updatedBooking = await prisma.booking.update({
+      where: { bookingNumber },
+      data: {
+        scheduledAt: newTime,
+        notes: booking.notes
+          ? `${booking.notes}\nRescheduled from ${booking.scheduledAt?.toISOString()} on ${new Date().toISOString()}`
+          : `Rescheduled from ${booking.scheduledAt?.toISOString()} on ${new Date().toISOString()}`,
+      },
+    });
+
+    // Send reschedule confirmation email
+    await sendRescheduleEmail(updatedBooking, booking.scheduledAt);
+
+    console.log(`[BOOKINGS] Booking ${bookingNumber} rescheduled to ${newTime.toISOString()}`);
+
+    res.json({
+      success: true,
+      message: 'Booking rescheduled successfully',
+      newDateTime: newTime.toISOString(),
+    });
+  })
 );
 
 /**
@@ -1152,6 +1205,7 @@ async function sendRescheduleEmail(
     console.log('[BOOKINGS] Reschedule email sent to:', booking.email);
   } catch (error) {
     console.error('[BOOKINGS] Failed to send reschedule email:', (error as Error).message);
+    captureError(error, { bookingNumber: booking.bookingNumber, context: 'booking-reschedule-email' });
   }
 }
 
@@ -1260,6 +1314,7 @@ async function sendAdminNotificationEmail(booking: BookingForEmail): Promise<voi
     console.log('[BOOKINGS] Admin notification email sent');
   } catch (error) {
     console.error('[BOOKINGS] Failed to send admin notification:', (error as Error).message);
+    captureError(error, { context: 'booking-admin-notification-email' });
   }
 }
 

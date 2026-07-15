@@ -15,10 +15,10 @@ import {
   authenticateToken,
   requireAdmin,
 } from '../middleware';
+import { asyncHandler, BadRequestError, NotFoundError } from '../middleware';
 import type {
   PhotoUploadRequest,
   TeamMemberRequest,
-  ErrorResponse,
 } from '../types';
 
 const router = Router();
@@ -116,8 +116,9 @@ async function processTeamPhotoToBase64(buffer: Buffer): Promise<string> {
  * Get all team members (public endpoint)
  * Returns team members from Photo model where category='team' and displayOnHome=true
  */
-router.get('/team', async (_req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/team',
+  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
     // Fetch team members from Photo model (where admin uploads them)
     // Filter by category='team' and displayOnHome=true for public display
     const teamMembers = await prisma.photo.findMany({
@@ -145,13 +146,8 @@ router.get('/team', async (_req: Request, res: Response): Promise<void> => {
     }));
 
     res.json(formattedTeam);
-  } catch (error) {
-    res.status(500).json({
-      message: 'Server error',
-      error: (error as Error).message,
-    } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * POST /api/team
@@ -162,28 +158,21 @@ router.post(
   authenticateToken,
   requireAdmin,
   upload.single('photo'),
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { name, role, bio } = req.body as TeamMemberRequest;
-      const photoUrl = req.file ? `/uploads/team/${req.file.filename}` : '';
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { name, role, bio } = req.body as TeamMemberRequest;
+    const photoUrl = req.file ? `/uploads/team/${req.file.filename}` : '';
 
-      const newTeamMember = await prisma.teamMember.create({
-        data: {
-          name,
-          role,
-          bio,
-          photoUrl,
-        },
-      });
+    const newTeamMember = await prisma.teamMember.create({
+      data: {
+        name,
+        role,
+        bio,
+        photoUrl,
+      },
+    });
 
-      res.status(201).json(newTeamMember);
-    } catch (error) {
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      } as ErrorResponse);
-    }
-  }
+    res.status(201).json(newTeamMember);
+  })
 );
 
 /**
@@ -195,33 +184,26 @@ router.put(
   authenticateToken,
   requireAdmin,
   upload.single('photo'),
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { name, role, bio } = req.body as TeamMemberRequest;
-      let photoUrl = req.body.photoUrl as string | undefined;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { name, role, bio } = req.body as TeamMemberRequest;
+    let photoUrl = req.body.photoUrl as string | undefined;
 
-      if (req.file) {
-        photoUrl = `/uploads/team/${req.file.filename}`;
-      }
-
-      const updatedTeamMember = await prisma.teamMember.update({
-        where: { id: req.params.id as string },
-        data: {
-          name,
-          role,
-          bio,
-          photoUrl,
-        },
-      });
-
-      res.json(updatedTeamMember);
-    } catch (error) {
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      } as ErrorResponse);
+    if (req.file) {
+      photoUrl = `/uploads/team/${req.file.filename}`;
     }
-  }
+
+    const updatedTeamMember = await prisma.teamMember.update({
+      where: { id: req.params.id as string },
+      data: {
+        name,
+        role,
+        bio,
+        photoUrl,
+      },
+    });
+
+    res.json(updatedTeamMember);
+  })
 );
 
 /**
@@ -232,19 +214,12 @@ router.delete(
   '/team/:id',
   authenticateToken,
   requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      await prisma.teamMember.delete({
-        where: { id: req.params.id as string },
-      });
-      res.json({ message: 'Team member deleted successfully' });
-    } catch (error) {
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      } as ErrorResponse);
-    }
-  }
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    await prisma.teamMember.delete({
+      where: { id: req.params.id as string },
+    });
+    res.json({ message: 'Team member deleted successfully' });
+  })
 );
 
 // ===========================================
@@ -256,8 +231,9 @@ router.delete(
  * Get all content items (public endpoint)
  * Returns content as key-value map
  */
-router.get('/content', async (_req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/content',
+  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
     const content = await prisma.content.findMany();
     const contentMap = content.reduce(
       (acc: Record<string, unknown>, item) => {
@@ -267,13 +243,8 @@ router.get('/content', async (_req: Request, res: Response): Promise<void> => {
       {}
     );
     res.json(contentMap);
-  } catch (error) {
-    res.status(500).json({
-      message: 'Server error',
-      error: (error as Error).message,
-    } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * PUT /api/content/:key
@@ -283,25 +254,18 @@ router.put(
   '/content/:key',
   authenticateToken,
   requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const key = req.params.key as string;
-      const { value } = req.body as { value: Record<string, unknown> };
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const key = req.params.key as string;
+    const { value } = req.body as { value: Record<string, unknown> };
 
-      const updatedContent = await prisma.content.upsert({
-        where: { key },
-        update: { value: value as Prisma.InputJsonValue },
-        create: { key, value: value as Prisma.InputJsonValue },
-      });
+    const updatedContent = await prisma.content.upsert({
+      where: { key },
+      update: { value: value as Prisma.InputJsonValue },
+      create: { key, value: value as Prisma.InputJsonValue },
+    });
 
-      res.json(updatedContent.value);
-    } catch (error) {
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      } as ErrorResponse);
-    }
-  }
+    res.json(updatedContent.value);
+  })
 );
 
 // ===========================================
@@ -312,17 +276,13 @@ router.put(
  * GET /api/photos
  * Get all photos (public endpoint)
  */
-router.get('/photos', async (_req: Request, res: Response): Promise<void> => {
-  try {
+router.get(
+  '/photos',
+  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
     const photos = await prisma.photo.findMany();
     res.json(photos);
-  } catch (error) {
-    res.status(500).json({
-      message: 'Server error',
-      error: (error as Error).message,
-    } as ErrorResponse);
-  }
-});
+  })
+);
 
 /**
  * POST /api/photos
@@ -334,54 +294,45 @@ router.post(
   authenticateToken,
   requireAdmin,
   upload.single('photoFile'),
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const {
-        name,
-        role,
-        credits,
-        placements,
-        category,
-        description,
-        displayOnHome,
-      } = req.body as PhotoUploadRequest;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const {
+      name,
+      role,
+      credits,
+      placements,
+      category,
+      description,
+      displayOnHome,
+    } = req.body as PhotoUploadRequest;
 
-      if (!category) {
-        res.status(400).json({ message: 'Category is required' } as ErrorResponse);
-        return;
-      }
-
-      let photoData: string | null = null;
-      let mimeType: string | null = null;
-
-      if (req.file) {
-        mimeType = req.file.mimetype;
-        photoData = await processTeamPhotoToBase64(req.file.buffer);
-      }
-
-      const newPhoto = await prisma.photo.create({
-        data: {
-          name: name || 'Untitled Photo',
-          role: role || '',
-          credits: credits || '',
-          placements: placements || '',
-          category,
-          description: description || '',
-          photoData,
-          mimeType,
-          displayOnHome: displayOnHome === true || String(displayOnHome) === 'true',
-        },
-      });
-
-      res.status(201).json(newPhoto);
-    } catch (error) {
-      console.error('[PHOTO] Upload error:', error);
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      } as ErrorResponse);
+    if (!category) {
+      throw new BadRequestError('Category is required');
     }
-  }
+
+    let photoData: string | null = null;
+    let mimeType: string | null = null;
+
+    if (req.file) {
+      mimeType = req.file.mimetype;
+      photoData = await processTeamPhotoToBase64(req.file.buffer);
+    }
+
+    const newPhoto = await prisma.photo.create({
+      data: {
+        name: name || 'Untitled Photo',
+        role: role || '',
+        credits: credits || '',
+        placements: placements || '',
+        category,
+        description: description || '',
+        photoData,
+        mimeType,
+        displayOnHome: displayOnHome === true || String(displayOnHome) === 'true',
+      },
+    });
+
+    res.status(201).json(newPhoto);
+  })
 );
 
 /**
@@ -393,59 +344,50 @@ router.put(
   authenticateToken,
   requireAdmin,
   upload.single('photoFile'),
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const {
-        name,
-        role,
-        credits,
-        placements,
-        category,
-        description,
-        displayOnHome,
-      } = req.body as PhotoUploadRequest;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const {
+      name,
+      role,
+      credits,
+      placements,
+      category,
+      description,
+      displayOnHome,
+    } = req.body as PhotoUploadRequest;
 
-      const photo = await prisma.photo.findUnique({
-        where: { id: req.params.id as string },
-      });
+    const photo = await prisma.photo.findUnique({
+      where: { id: req.params.id as string },
+    });
 
-      if (!photo) {
-        res.status(404).json({ message: 'Photo not found' } as ErrorResponse);
-        return;
-      }
-
-      // Build update data object with only provided fields
-      const updateData: Record<string, unknown> = {};
-
-      if (name !== undefined) updateData.name = name;
-      if (role !== undefined) updateData.role = role;
-      if (credits !== undefined) updateData.credits = credits;
-      if (placements !== undefined) updateData.placements = placements;
-      if (category !== undefined) updateData.category = category;
-      if (description !== undefined) updateData.description = description;
-      if (displayOnHome !== undefined) {
-        updateData.displayOnHome = displayOnHome === true || String(displayOnHome) === 'true';
-      }
-
-      if (req.file) {
-        updateData.photoData = await processTeamPhotoToBase64(req.file.buffer);
-        updateData.mimeType = req.file.mimetype;
-      }
-
-      const updatedPhoto = await prisma.photo.update({
-        where: { id: req.params.id as string },
-        data: updateData,
-      });
-
-      res.json(updatedPhoto);
-    } catch (error) {
-      console.error('[PHOTO] Update error:', error);
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      } as ErrorResponse);
+    if (!photo) {
+      throw new NotFoundError('Photo not found');
     }
-  }
+
+    // Build update data object with only provided fields
+    const updateData: Record<string, unknown> = {};
+
+    if (name !== undefined) updateData.name = name;
+    if (role !== undefined) updateData.role = role;
+    if (credits !== undefined) updateData.credits = credits;
+    if (placements !== undefined) updateData.placements = placements;
+    if (category !== undefined) updateData.category = category;
+    if (description !== undefined) updateData.description = description;
+    if (displayOnHome !== undefined) {
+      updateData.displayOnHome = displayOnHome === true || String(displayOnHome) === 'true';
+    }
+
+    if (req.file) {
+      updateData.photoData = await processTeamPhotoToBase64(req.file.buffer);
+      updateData.mimeType = req.file.mimetype;
+    }
+
+    const updatedPhoto = await prisma.photo.update({
+      where: { id: req.params.id as string },
+      data: updateData,
+    });
+
+    res.json(updatedPhoto);
+  })
 );
 
 /**
@@ -456,20 +398,12 @@ router.delete(
   '/photos/:id',
   authenticateToken,
   requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      await prisma.photo.delete({
-        where: { id: req.params.id as string },
-      });
-      res.json({ message: 'Photo deleted successfully' });
-    } catch (error) {
-      console.error('[PHOTO] Delete error:', error);
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      } as ErrorResponse);
-    }
-  }
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    await prisma.photo.delete({
+      where: { id: req.params.id as string },
+    });
+    res.json({ message: 'Photo deleted successfully' });
+  })
 );
 
 // ===========================================
@@ -485,130 +419,122 @@ router.get(
   '/admin/metrics/orders',
   authenticateToken,
   requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const period = parseQueryString(req.query.period) || '30d';
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const period = parseQueryString(req.query.period) || '30d';
 
-      // Calculate date range
-      const now = new Date();
-      let startDate: Date;
+    // Calculate date range
+    const now = new Date();
+    let startDate: Date;
 
-      switch (period) {
-        case '7d':
-          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          break;
-        case '90d':
-          startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-          break;
-        case '30d':
-        default:
-          startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      }
-
-      // Get orders within period
-      const orders = await prisma.order.findMany({
-        where: {
-          createdAt: { gte: startDate },
-        },
-        select: {
-          id: true,
-          total: true,
-          status: true,
-          paymentStatus: true,
-          createdAt: true,
-        },
-      });
-
-      // Calculate metrics
-      const totalOrders = orders.length;
-      const completedOrders = orders.filter((o) => o.status === 'COMPLETED').length;
-      const pendingOrders = orders.filter((o) => o.status === 'PENDING').length;
-      const cancelledOrders = orders.filter((o) => o.status === 'CANCELLED').length;
-
-      const paidOrders = orders.filter((o) => o.paymentStatus === 'PAID');
-      const totalRevenue = paidOrders.reduce((sum, o) => sum + o.total, 0);
-      const avgOrderValue = paidOrders.length > 0 ? totalRevenue / paidOrders.length : 0;
-
-      // Orders by status
-      const ordersByStatus = {
-        COMPLETED: completedOrders,
-        PENDING: pendingOrders,
-        CANCELLED: cancelledOrders,
-        REFUNDED: orders.filter((o) => o.status === 'REFUNDED').length,
-      };
-
-      // Orders by payment status
-      const ordersByPaymentStatus = {
-        PAID: paidOrders.length,
-        PENDING: orders.filter((o) => o.paymentStatus === 'PENDING').length,
-        FAILED: orders.filter((o) => o.paymentStatus === 'FAILED').length,
-        REFUNDED: orders.filter((o) => o.paymentStatus === 'REFUNDED').length,
-      };
-
-      // Orders over time (group by day)
-      const ordersByDay: Record<string, { count: number; revenue: number }> = {};
-      orders.forEach((order) => {
-        const day = order.createdAt.toISOString().split('T')[0];
-        if (!ordersByDay[day]) {
-          ordersByDay[day] = { count: 0, revenue: 0 };
-        }
-        ordersByDay[day].count++;
-        if (order.paymentStatus === 'PAID') {
-          ordersByDay[day].revenue += order.total;
-        }
-      });
-
-      // Convert to array sorted by date
-      const revenueByDay = Object.entries(ordersByDay)
-        .map(([date, data]) => ({ date, ...data }))
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-      // Get previous period for comparison
-      const prevStartDate = new Date(
-        startDate.getTime() - (now.getTime() - startDate.getTime())
-      );
-      const prevOrders = await prisma.order.findMany({
-        where: {
-          createdAt: {
-            gte: prevStartDate,
-            lt: startDate,
-          },
-          paymentStatus: 'PAID',
-        },
-        select: { total: true },
-      });
-
-      const prevRevenue = prevOrders.reduce((sum, o) => sum + o.total, 0);
-      const revenueChange =
-        prevRevenue > 0
-          ? ((totalRevenue - prevRevenue) / prevRevenue) * 100
-          : totalRevenue > 0
-            ? 100
-            : 0;
-
-      res.json({
-        period,
-        totalOrders,
-        completedOrders,
-        pendingOrders,
-        totalRevenue: parseFloat(totalRevenue.toFixed(2)),
-        avgOrderValue: parseFloat(avgOrderValue.toFixed(2)),
-        ordersByStatus,
-        ordersByPaymentStatus,
-        revenueByDay,
-        comparison: {
-          prevRevenue: parseFloat(prevRevenue.toFixed(2)),
-          revenueChange: parseFloat(revenueChange.toFixed(1)),
-        },
-      });
-    } catch (error) {
-      console.error('[METRICS] Error fetching order metrics:', (error as Error).message);
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      } as ErrorResponse);
+    switch (period) {
+      case '7d':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case '90d':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        break;
+      case '30d':
+      default:
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     }
-  }
+
+    // Get orders within period
+    const orders = await prisma.order.findMany({
+      where: {
+        createdAt: { gte: startDate },
+      },
+      select: {
+        id: true,
+        total: true,
+        status: true,
+        paymentStatus: true,
+        createdAt: true,
+      },
+    });
+
+    // Calculate metrics
+    const totalOrders = orders.length;
+    const completedOrders = orders.filter((o) => o.status === 'COMPLETED').length;
+    const pendingOrders = orders.filter((o) => o.status === 'PENDING').length;
+    const cancelledOrders = orders.filter((o) => o.status === 'CANCELLED').length;
+
+    const paidOrders = orders.filter((o) => o.paymentStatus === 'PAID');
+    const totalRevenue = paidOrders.reduce((sum, o) => sum + o.total, 0);
+    const avgOrderValue = paidOrders.length > 0 ? totalRevenue / paidOrders.length : 0;
+
+    // Orders by status
+    const ordersByStatus = {
+      COMPLETED: completedOrders,
+      PENDING: pendingOrders,
+      CANCELLED: cancelledOrders,
+      REFUNDED: orders.filter((o) => o.status === 'REFUNDED').length,
+    };
+
+    // Orders by payment status
+    const ordersByPaymentStatus = {
+      PAID: paidOrders.length,
+      PENDING: orders.filter((o) => o.paymentStatus === 'PENDING').length,
+      FAILED: orders.filter((o) => o.paymentStatus === 'FAILED').length,
+      REFUNDED: orders.filter((o) => o.paymentStatus === 'REFUNDED').length,
+    };
+
+    // Orders over time (group by day)
+    const ordersByDay: Record<string, { count: number; revenue: number }> = {};
+    orders.forEach((order) => {
+      const day = order.createdAt.toISOString().split('T')[0];
+      if (!ordersByDay[day]) {
+        ordersByDay[day] = { count: 0, revenue: 0 };
+      }
+      ordersByDay[day].count++;
+      if (order.paymentStatus === 'PAID') {
+        ordersByDay[day].revenue += order.total;
+      }
+    });
+
+    // Convert to array sorted by date
+    const revenueByDay = Object.entries(ordersByDay)
+      .map(([date, data]) => ({ date, ...data }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    // Get previous period for comparison
+    const prevStartDate = new Date(
+      startDate.getTime() - (now.getTime() - startDate.getTime())
+    );
+    const prevOrders = await prisma.order.findMany({
+      where: {
+        createdAt: {
+          gte: prevStartDate,
+          lt: startDate,
+        },
+        paymentStatus: 'PAID',
+      },
+      select: { total: true },
+    });
+
+    const prevRevenue = prevOrders.reduce((sum, o) => sum + o.total, 0);
+    const revenueChange =
+      prevRevenue > 0
+        ? ((totalRevenue - prevRevenue) / prevRevenue) * 100
+        : totalRevenue > 0
+          ? 100
+          : 0;
+
+    res.json({
+      period,
+      totalOrders,
+      completedOrders,
+      pendingOrders,
+      totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+      avgOrderValue: parseFloat(avgOrderValue.toFixed(2)),
+      ordersByStatus,
+      ordersByPaymentStatus,
+      revenueByDay,
+      comparison: {
+        prevRevenue: parseFloat(prevRevenue.toFixed(2)),
+        revenueChange: parseFloat(revenueChange.toFixed(1)),
+      },
+    });
+  })
 );
 
 // ===========================================
@@ -623,61 +549,53 @@ router.get(
   '/admin/bookings',
   authenticateToken,
   requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const status = parseQueryString(req.query.status);
-      const startDate = parseQueryString(req.query.startDate);
-      const endDate = parseQueryString(req.query.endDate);
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const status = parseQueryString(req.query.status);
+    const startDate = parseQueryString(req.query.startDate);
+    const endDate = parseQueryString(req.query.endDate);
 
-      interface BookingWhereClause {
-        status?: string;
-        scheduledAt?: {
-          gte?: Date;
-          lte?: Date;
-        };
-      }
-
-      const where: BookingWhereClause = {};
-
-      if (status && status !== 'all') {
-        where.status = status.toUpperCase();
-      }
-
-      if (startDate || endDate) {
-        where.scheduledAt = {};
-        if (startDate) {
-          where.scheduledAt.gte = new Date(startDate);
-        }
-        if (endDate) {
-          where.scheduledAt.lte = new Date(endDate);
-        }
-      }
-
-      const bookings = await prisma.booking.findMany({
-        where,
-        include: {
-          customer: {
-            select: {
-              email: true,
-              firstName: true,
-              lastName: true,
-              stageName: true,
-            },
-          },
-          promo: true,
-        },
-        orderBy: { scheduledAt: 'desc' },
-      });
-
-      res.json(bookings);
-    } catch (error) {
-      console.error('[ADMIN] Error fetching bookings:', (error as Error).message);
-      res.status(500).json({
-        message: 'Failed to fetch bookings',
-        error: (error as Error).message,
-      } as ErrorResponse);
+    interface BookingWhereClause {
+      status?: string;
+      scheduledAt?: {
+        gte?: Date;
+        lte?: Date;
+      };
     }
-  }
+
+    const where: BookingWhereClause = {};
+
+    if (status && status !== 'all') {
+      where.status = status.toUpperCase();
+    }
+
+    if (startDate || endDate) {
+      where.scheduledAt = {};
+      if (startDate) {
+        where.scheduledAt.gte = new Date(startDate);
+      }
+      if (endDate) {
+        where.scheduledAt.lte = new Date(endDate);
+      }
+    }
+
+    const bookings = await prisma.booking.findMany({
+      where,
+      include: {
+        customer: {
+          select: {
+            email: true,
+            firstName: true,
+            lastName: true,
+            stageName: true,
+          },
+        },
+        promo: true,
+      },
+      orderBy: { scheduledAt: 'desc' },
+    });
+
+    res.json(bookings);
+  })
 );
 
 /**
@@ -688,31 +606,23 @@ router.get(
   '/admin/bookings/:id',
   authenticateToken,
   requireAdmin,
-  async (req: Request<{ id: string }>, res: Response): Promise<void> => {
-    try {
-      const { id } = req.params;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
 
-      const booking = await prisma.booking.findUnique({
-        where: { id },
-        include: {
-          customer: true,
-          promo: true,
-        },
-      });
+    const booking = await prisma.booking.findUnique({
+      where: { id },
+      include: {
+        customer: true,
+        promo: true,
+      },
+    });
 
-      if (!booking) {
-        res.status(404).json({ message: 'Booking not found' } as ErrorResponse);
-        return;
-      }
-
-      res.json(booking);
-    } catch (error) {
-      res.status(500).json({
-        message: 'Server error',
-        error: (error as Error).message,
-      } as ErrorResponse);
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
     }
-  }
+
+    res.json(booking);
+  })
 );
 
 /**
@@ -723,49 +633,40 @@ router.put(
   '/admin/bookings/:id',
   authenticateToken,
   requireAdmin,
-  async (req: Request<{ id: string }>, res: Response): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const { status, notes, scheduledAt } = req.body;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
+    const { status, notes, scheduledAt } = req.body;
 
-      const updateData: Prisma.BookingUpdateInput = {};
+    const updateData: Prisma.BookingUpdateInput = {};
 
-      if (status) {
-        const validStatuses = ['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
-        if (!validStatuses.includes(status)) {
-          res.status(400).json({ message: 'Invalid status' } as ErrorResponse);
-          return;
-        }
-        updateData.status = status;
+    if (status) {
+      const validStatuses = ['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
+      if (!validStatuses.includes(status)) {
+        throw new BadRequestError('Invalid status');
       }
-
-      if (notes !== undefined) {
-        updateData.notes = notes;
-      }
-
-      if (scheduledAt) {
-        updateData.scheduledAt = new Date(scheduledAt);
-      }
-
-      const booking = await prisma.booking.update({
-        where: { id },
-        data: updateData,
-        include: {
-          customer: true,
-        },
-      });
-
-      console.log(`[ADMIN] Booking ${booking.bookingNumber} updated - Status: ${booking.status}`);
-
-      res.json(booking);
-    } catch (error) {
-      console.error('[ADMIN] Error updating booking:', (error as Error).message);
-      res.status(500).json({
-        message: 'Failed to update booking',
-        error: (error as Error).message,
-      } as ErrorResponse);
+      updateData.status = status;
     }
-  }
+
+    if (notes !== undefined) {
+      updateData.notes = notes;
+    }
+
+    if (scheduledAt) {
+      updateData.scheduledAt = new Date(scheduledAt);
+    }
+
+    const booking = await prisma.booking.update({
+      where: { id },
+      data: updateData,
+      include: {
+        customer: true,
+      },
+    });
+
+    console.log(`[ADMIN] Booking ${booking.bookingNumber} updated - Status: ${booking.status}`);
+
+    res.json(booking);
+  })
 );
 
 /**
@@ -776,27 +677,19 @@ router.delete(
   '/admin/bookings/:id',
   authenticateToken,
   requireAdmin,
-  async (req: Request<{ id: string }>, res: Response): Promise<void> => {
-    try {
-      const { id } = req.params;
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
 
-      // Soft delete by setting status to CANCELLED
-      const booking = await prisma.booking.update({
-        where: { id },
-        data: { status: 'CANCELLED' },
-      });
+    // Soft delete by setting status to CANCELLED
+    const booking = await prisma.booking.update({
+      where: { id },
+      data: { status: 'CANCELLED' },
+    });
 
-      console.log(`[ADMIN] Booking ${booking.bookingNumber} cancelled`);
+    console.log(`[ADMIN] Booking ${booking.bookingNumber} cancelled`);
 
-      res.json({ message: 'Booking cancelled', booking });
-    } catch (error) {
-      console.error('[ADMIN] Error cancelling booking:', (error as Error).message);
-      res.status(500).json({
-        message: 'Failed to cancel booking',
-        error: (error as Error).message,
-      } as ErrorResponse);
-    }
-  }
+    res.json({ message: 'Booking cancelled', booking });
+  })
 );
 
 export default router;

@@ -54,6 +54,7 @@ interface Config {
   brevo: BrevoConfig;
   frontendUrl: string;
   downloadLinkExpiryDays: number;
+  sentryDsn: string | undefined;
 }
 
 /**
@@ -187,6 +188,7 @@ function buildConfig(): Config {
 
     frontendUrl: optionalEnv('FRONTEND_URL', 'http://localhost:5173'),
     downloadLinkExpiryDays: optionalIntEnv('DOWNLOAD_LINK_EXPIRY_DAYS', 7),
+    sentryDsn: process.env.SENTRY_DSN,
   };
 }
 
@@ -203,6 +205,10 @@ function warnInsecureDefaults(config: Config): void {
 
     if (!config.square.webhookSignatureKey) {
       warnings.push('SQUARE_WEBHOOK_SIGNATURE_KEY is not set (webhook signature verification disabled)');
+    }
+
+    if (!config.sentryDsn) {
+      warnings.push('SENTRY_DSN is not set (uncaught exceptions and payment/email failures will only be visible in logs)');
     }
 
     if (warnings.length > 0) {
@@ -230,6 +236,7 @@ console.log(`[CONFIG] SendGrid enabled: ${!!config.sendgrid.apiKey}`);
 
 // Export individual config sections for convenience
 export const { database, auth, square, email, sendgrid, brevo } = config;
+export const sentryDsn = config.sentryDsn;
 
 // Export type for use in other modules
 export type { Config, DatabaseConfig, AuthConfig, SquareConfig, EmailConfig, SendGridConfig, BrevoConfig };
