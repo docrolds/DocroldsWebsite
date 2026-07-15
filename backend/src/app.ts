@@ -22,6 +22,12 @@ import {
 // Create Express app
 const app: Express = express();
 
+// Render sits behind a reverse proxy - without this, Express can't see the
+// real client IP (req.ip resolves to the proxy's address for everyone),
+// which breaks IP-based rate limiting by making all visitors share one
+// bucket. `1` trusts exactly one hop (Render's own proxy).
+app.set('trust proxy', 1);
+
 // Security headers (CSP disabled: this API serves no HTML and CSP would
 // only interfere with cross-origin static asset/upload responses)
 app.use(helmet({ contentSecurityPolicy: false }));
