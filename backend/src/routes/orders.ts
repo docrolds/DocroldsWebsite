@@ -353,10 +353,15 @@ function isValidSquareSignature(
 ): boolean {
   const { webhookSignatureKey, webhookNotificationUrl } = config.square;
 
-  // If verification isn't configured, don't block webhooks - just skip
-  // the check (this is logged as a startup warning in production).
+  // Fail closed if verification isn't configured: an unverified webhook
+  // endpoint lets anyone who knows a real Square payment ID forge a
+  // "refund.created" event and flip that order to REFUNDED, blocking the
+  // legitimate customer's download. Rejecting is safer than accepting -
+  // this only means real Square webhooks get rejected too until the key
+  // is set (logged as a startup warning), not that checkout/payments break
+  // (that's a separate route).
   if (!webhookSignatureKey || !webhookNotificationUrl) {
-    return true;
+    return false;
   }
 
   if (!rawBody || !signatureHeader) {

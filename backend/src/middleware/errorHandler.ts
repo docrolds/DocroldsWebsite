@@ -160,15 +160,6 @@ export const errorHandler = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _next: NextFunction
 ): void => {
-  // Log error for debugging
-  console.error('[ERROR]', {
-    message: err.message,
-    stack: err.stack,
-    path: req.path,
-    method: req.method,
-    timestamp: new Date().toISOString(),
-  });
-
   // Default error response
   let statusCode = 500;
   let response: ErrorResponse = {
@@ -276,6 +267,24 @@ export const errorHandler = (
   // Include stack trace in development/staging
   if (config.nodeEnv !== 'production') {
     response.stack = err.stack;
+  }
+
+  // Log severity-appropriately, now that the real status code is known:
+  // unexpected server errors get the full detail (stack included), routine
+  // client errors (bad input, 404s, auth failures) get a one-line note so
+  // they don't drown out actual problems in the log stream.
+  if (statusCode >= 500) {
+    console.error('[ERROR]', {
+      message: err.message,
+      stack: err.stack,
+      path: req.path,
+      method: req.method,
+      timestamp: new Date().toISOString(),
+    });
+  } else {
+    console.log(
+      `[${statusCode}] ${req.method} ${req.path} - ${response.message}`
+    );
   }
 
   res.status(statusCode).json(response);

@@ -72,7 +72,13 @@ if (config.nodeEnv !== 'production') {
   });
 }
 
-// Health check endpoint
+// Health check endpoints. Render's own uptime probe hits "/" by default
+// (not "/health"), which otherwise falls through to the 404 handler and
+// logs a spurious [ERROR] on every check.
+app.get('/', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', service: 'docrolds-api' });
+});
+
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });

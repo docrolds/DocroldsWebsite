@@ -54,7 +54,6 @@ interface Config {
   brevo: BrevoConfig;
   frontendUrl: string;
   downloadLinkExpiryDays: number;
-  cronSecret: string | undefined;
 }
 
 /**
@@ -188,7 +187,6 @@ function buildConfig(): Config {
 
     frontendUrl: optionalEnv('FRONTEND_URL', 'http://localhost:5173'),
     downloadLinkExpiryDays: optionalIntEnv('DOWNLOAD_LINK_EXPIRY_DAYS', 7),
-    cronSecret: process.env.CRON_SECRET,
   };
 }
 
@@ -201,10 +199,6 @@ function warnInsecureDefaults(config: Config): void {
 
     if (!config.brevo.apiKey && !config.sendgrid.apiKey && !config.email.appPass) {
       warnings.push('No email provider configured (BREVO_API_KEY, SENDGRID_API_KEY, or EMAIL_APP_PASS) - emails will fail to send');
-    }
-
-    if (!config.cronSecret) {
-      warnings.push('CRON_SECRET is not set (cron endpoints unprotected)');
     }
 
     if (!config.square.webhookSignatureKey) {

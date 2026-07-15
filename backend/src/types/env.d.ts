@@ -39,9 +39,6 @@ declare global {
 
       // Download Settings
       DOWNLOAD_LINK_EXPIRY_DAYS?: string;
-
-      // Cron Job Secret
-      CRON_SECRET?: string;
     }
   }
 }
