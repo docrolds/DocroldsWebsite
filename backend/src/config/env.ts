@@ -37,6 +37,12 @@ interface SendGridConfig {
   fromName: string;
 }
 
+interface BrevoConfig {
+  apiKey: string | undefined;
+  fromEmail: string;
+  fromName: string;
+}
+
 interface Config {
   port: number;
   nodeEnv: 'development' | 'production' | 'staging' | 'test';
@@ -45,6 +51,7 @@ interface Config {
   square: SquareConfig;
   email: EmailConfig;
   sendgrid: SendGridConfig;
+  brevo: BrevoConfig;
   frontendUrl: string;
   downloadLinkExpiryDays: number;
   cronSecret: string | undefined;
@@ -173,6 +180,12 @@ function buildConfig(): Config {
       fromName: optionalEnv('SENDGRID_FROM_NAME', 'Doc Rolds'),
     },
 
+    brevo: {
+      apiKey: process.env.BREVO_API_KEY,
+      fromEmail: optionalEnv('BREVO_FROM_EMAIL', 'info@docrolds.com'),
+      fromName: optionalEnv('BREVO_FROM_NAME', 'Doc Rolds'),
+    },
+
     frontendUrl: optionalEnv('FRONTEND_URL', 'http://localhost:5173'),
     downloadLinkExpiryDays: optionalIntEnv('DOWNLOAD_LINK_EXPIRY_DAYS', 7),
     cronSecret: process.env.CRON_SECRET,
@@ -186,12 +199,8 @@ function warnInsecureDefaults(config: Config): void {
   if (config.nodeEnv === 'production') {
     const warnings: string[] = [];
 
-    if (!config.email.appPass) {
-      warnings.push('EMAIL_APP_PASS is not set (email sending may fail)');
-    }
-
-    if (!config.sendgrid.apiKey) {
-      warnings.push('SENDGRID_API_KEY is not set (SendGrid email fallback unavailable)');
+    if (!config.brevo.apiKey && !config.sendgrid.apiKey && !config.email.appPass) {
+      warnings.push('No email provider configured (BREVO_API_KEY, SENDGRID_API_KEY, or EMAIL_APP_PASS) - emails will fail to send');
     }
 
     if (!config.cronSecret) {
@@ -222,10 +231,11 @@ console.log(`[CONFIG] Configuration loaded successfully`);
 console.log(`[CONFIG] Environment: ${config.nodeEnv}`);
 console.log(`[CONFIG] Port: ${config.port}`);
 console.log(`[CONFIG] Square environment: ${config.square.environment}`);
+console.log(`[CONFIG] Brevo enabled: ${!!config.brevo.apiKey}`);
 console.log(`[CONFIG] SendGrid enabled: ${!!config.sendgrid.apiKey}`);
 
 // Export individual config sections for convenience
-export const { database, auth, square, email, sendgrid } = config;
+export const { database, auth, square, email, sendgrid, brevo } = config;
 
 // Export type for use in other modules
-export type { Config, DatabaseConfig, AuthConfig, SquareConfig, EmailConfig, SendGridConfig };
+export type { Config, DatabaseConfig, AuthConfig, SquareConfig, EmailConfig, SendGridConfig, BrevoConfig };
