@@ -230,12 +230,12 @@ export default function CustomerRegisterPage(): JSX.Element {
           </div>
 
           <div className="auth-benefits-v2">
-            <h4>Benefits of creating an account:</h4>
+            <h4>Account perks</h4>
             <ul>
-              <li><i className="fas fa-check" aria-hidden="true"></i> Unlimited download access</li>
-              <li><i className="fas fa-check" aria-hidden="true"></i> Save and organize your favorite beats</li>
-              <li><i className="fas fa-check" aria-hidden="true"></i> Track your purchases</li>
-              <li><i className="fas fa-check" aria-hidden="true"></i> Faster checkout</li>
+              <li><i className="fas fa-check" aria-hidden="true"></i> Unlimited re-downloads</li>
+              <li><i className="fas fa-check" aria-hidden="true"></i> Saved favorites</li>
+              <li><i className="fas fa-check" aria-hidden="true"></i> Order history</li>
+              <li><i className="fas fa-check" aria-hidden="true"></i> One-tap checkout</li>
             </ul>
           </div>
         </div>

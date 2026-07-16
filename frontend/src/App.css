@@ -13303,24 +13303,27 @@ body.has-audio-player footer {
 .auth-benefits-v2 {
     margin-top: 1.5rem;
     padding: 1.25rem;
-    background: #0a0a0a;
-    border-radius: 12px;
+    background: var(--card, #0a0a0a);
+    border: 1px solid var(--border, #27272a);
+    border-radius: var(--radius-md, 12px);
 }
 
 .auth-benefits-v2 h4 {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     font-weight: 600;
-    color: #888;
-    margin: 0 0 0.75rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--muted-foreground, #a1a1aa);
+    margin: 0 0 0.85rem;
 }
 
 .auth-benefits-v2 ul {
     list-style: none;
     padding: 0;
     margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem 1rem;
 }
 
 .auth-benefits-v2 li {
@@ -13328,12 +13331,18 @@ body.has-audio-player footer {
     align-items: center;
     gap: 0.5rem;
     font-size: 0.85rem;
-    color: #888;
+    color: var(--foreground, #fafafa);
 }
 
 .auth-benefits-v2 li i {
-    color: #22c55e;
-    font-size: 0.75rem;
+    color: var(--primary);
+    font-size: 0.7rem;
+}
+
+@media (max-width: 420px) {
+    .auth-benefits-v2 ul {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* ==========================================
