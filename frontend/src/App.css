@@ -13310,9 +13310,7 @@ body.has-audio-player footer {
 
 .auth-benefits-v2 h4 {
     font-size: 0.8rem;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
+    font-weight: 500;
     color: var(--muted-foreground, #a1a1aa);
     margin: 0 0 0.85rem;
 }
