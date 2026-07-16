@@ -13321,28 +13321,23 @@ body.has-audio-player footer {
     list-style: none;
     padding: 0;
     margin: 0;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.6rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
 }
 
 .auth-benefits-v2 li {
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    align-items: baseline;
+    gap: 0.6rem;
     font-size: 0.85rem;
+    line-height: 1.4;
     color: var(--foreground, #fafafa);
 }
 
 .auth-benefits-v2 li i {
     color: var(--primary);
     font-size: 0.7rem;
-}
-
-@media (max-width: 420px) {
-    .auth-benefits-v2 ul {
-        grid-template-columns: 1fr;
-    }
 }
 
 /* ==========================================
