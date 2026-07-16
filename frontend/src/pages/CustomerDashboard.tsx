@@ -1,7 +1,8 @@
 import { useState, useEffect, ChangeEvent, FormEvent } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useCustomerAuth, Customer } from '../context/CustomerAuthContext';
-import { useToast, useNotifications, Notification } from '../context/NotificationContext';
+import { useToast, useNotifications, Notification, getNotificationActionUrl } from '../context/NotificationContext';
+import NotificationItem from '../components/NotificationItem';
 import { API_URL } from '../config';
 
 // ============================================
@@ -116,10 +117,11 @@ interface ExtendedCustomer extends Customer {
 
 export default function CustomerDashboard(): JSX.Element | null {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { customer, token, loading: authLoading, isAuthenticated, logout, updateProfile, uploadProfilePicture, changePassword } = useCustomerAuth();
   const toast = useToast();
   const { notifications, markAsRead, markAllAsRead } = useNotifications();
-  const [activeSection, setActiveSection] = useState<string>('overview');
+  const [activeSection, setActiveSection] = useState<string>(searchParams.get('section') || 'overview');
   const [orders, setOrders] = useState<Order[]>([]);
   const [likedBeats, setLikedBeats] = useState<Beat[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -152,6 +154,15 @@ export default function CustomerDashboard(): JSX.Element | null {
       navigate('/login?returnTo=/dashboard');
     }
   }, [authLoading, isAuthenticated, navigate]);
+
+  // Keep the active section in sync with ?section= (e.g. the bell dropdown's
+  // "View all notifications" link) even when the dashboard is already mounted.
+  useEffect(() => {
+    const section = searchParams.get('section');
+    if (section) {
+      setActiveSection(section);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (extendedCustomer) {
@@ -251,18 +262,15 @@ export default function CustomerDashboard(): JSX.Element | null {
     navigate('/');
   };
 
-  const getTimeAgo = (date: string | Date): string => {
-    const now = new Date();
-    const past = new Date(date);
-    const diffMs = now.getTime() - past.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return past.toLocaleDateString();
+  const handleNotificationClick = async (notification: Notification): Promise<void> => {
+    if (!notification.isRead) {
+      await markAsRead(notification.id);
+    }
+
+    const actionUrl = getNotificationActionUrl(notification);
+    if (actionUrl) {
+      navigate(actionUrl);
+    }
   };
 
   if (authLoading) {
@@ -458,19 +466,11 @@ export default function CustomerDashboard(): JSX.Element | null {
                     ) : (
                       <div className="notification-list">
                         {notifications.slice(0, 4).map((notif: Notification) => (
-                          <div key={notif.id} className={`notification-item ${!notif.isRead ? 'unread' : ''}`}>
-                            <div className="notification-icon">
-                              <i className={`fas ${
-                                notif.type === 'ORDER_COMPLETED' ? 'fa-check-circle' :
-                                notif.type === 'DOWNLOAD_READY' ? 'fa-download' :
-                                notif.type === 'WELCOME' ? 'fa-hand-wave' : 'fa-bell'
-                              }`}></i>
-                            </div>
-                            <div className="notification-content">
-                              <p className="notification-title">{notif.title}</p>
-                              <span className="notification-time">{getTimeAgo(notif.createdAt)}</span>
-                            </div>
-                          </div>
+                          <NotificationItem
+                            key={notif.id}
+                            notification={notif}
+                            onClick={handleNotificationClick}
+                          />
                         ))}
                       </div>
                     )}
@@ -763,26 +763,12 @@ export default function CustomerDashboard(): JSX.Element | null {
                   ) : (
                     <div className="notifications-list">
                       {notifications.map((notif: Notification) => (
-                        <div
+                        <NotificationItem
                           key={notif.id}
-                          className={`notification-row ${!notif.isRead ? 'unread' : ''}`}
-                          onClick={() => !notif.isRead && markAsRead(notif.id)}
-                        >
-                          <div className={`notification-icon-lg ${notif.type?.toLowerCase().replace('_', '-')}`}>
-                            <i className={`fas ${
-                              notif.type === 'ORDER_COMPLETED' ? 'fa-check-circle' :
-                              notif.type === 'DOWNLOAD_READY' ? 'fa-download' :
-                              notif.type === 'DOWNLOAD_EXPIRING' ? 'fa-clock' :
-                              notif.type === 'WELCOME' ? 'fa-hand-wave' : 'fa-bell'
-                            }`}></i>
-                          </div>
-                          <div className="notification-body">
-                            <h4>{notif.title}</h4>
-                            <p>{notif.message}</p>
-                            <span className="notification-timestamp">{getTimeAgo(notif.createdAt)}</span>
-                          </div>
-                          {!notif.isRead && <span className="unread-dot"></span>}
-                        </div>
+                          notification={notif}
+                          onClick={handleNotificationClick}
+                          variant="full"
+                        />
                       ))}
                     </div>
                   )}

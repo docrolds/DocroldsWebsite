@@ -44,7 +44,12 @@ export interface Notification {
   readAt: Date | null;
   createdAt: Date;
   customerId: string;
-  metadata?: Record<string, unknown>;
+  data?: { actionUrl?: string; [key: string]: unknown };
+}
+
+/** Reads the target URL from a notification's data payload, if any. */
+export function getNotificationActionUrl(notification: Notification): string | undefined {
+  return notification.data?.actionUrl;
 }
 
 /** Toast notification for transient UI feedback */

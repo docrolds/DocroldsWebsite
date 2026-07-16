@@ -7813,7 +7813,7 @@ body.has-audio-player footer {
 .notification-mark-read-btn {
     background: none;
     border: none;
-    color: #3b82f6;
+    color: var(--primary);
     font-size: 0.85rem;
     font-weight: 500;
     cursor: pointer;
@@ -7822,7 +7822,7 @@ body.has-audio-player footer {
 }
 
 .notification-mark-read-btn:hover {
-    color: #60a5fa;
+    color: var(--accent);
 }
 
 .notification-dropdown-list {
@@ -7881,14 +7881,14 @@ body.has-audio-player footer {
 }
 
 .notification-item.unread {
-    background: rgba(59, 130, 246, 0.08);
+    background: var(--primary-muted, rgba(232, 54, 40, 0.08));
 }
 
 .notification-item.unread:hover {
-    background: rgba(59, 130, 246, 0.12);
+    background: rgba(232, 54, 40, 0.14);
 }
 
-/* Unread dot - Left side, blue */
+/* Unread dot - Left side, brand red */
 .notification-unread-dot {
     position: absolute;
     left: 6px;
@@ -7896,46 +7896,65 @@ body.has-audio-player footer {
     transform: translateY(-50%);
     width: 8px;
     height: 8px;
-    background: #3b82f6;
+    background: var(--primary);
     border-radius: 50%;
 }
 
-/* Notification Icon - Circular like avatars */
-.notification-icon {
+/* Notification Avatar - Doc Rolds logo (every notification today is
+   system-generated, so the brand mark is always the "sender"), with a
+   small circular badge overlay distinguishing the notification type. */
+.notification-avatar {
+    position: relative;
     width: 44px;
     height: 44px;
+    flex-shrink: 0;
+}
+
+.notification-avatar-logo {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid var(--border);
+}
+
+.notification-type-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
-    font-size: 1rem;
+    font-size: 0.6rem;
+    border: 2px solid var(--card, #151515);
 }
 
-/* Type-specific colors (more vibrant) */
-.notification-icon.order {
-    background: rgba(34, 197, 94, 0.15);
-    color: #22c55e;
+.notification-type-badge.order {
+    background: #22c55e;
+    color: #fff;
 }
 
-.notification-icon.download {
-    background: rgba(59, 130, 246, 0.15);
-    color: #3b82f6;
+.notification-type-badge.download {
+    background: var(--primary);
+    color: #fff;
 }
 
-.notification-icon.expiring {
-    background: rgba(234, 179, 8, 0.15);
-    color: #eab308;
+.notification-type-badge.expiring {
+    background: #eab308;
+    color: #1a1a1a;
 }
 
-.notification-icon.welcome {
-    background: rgba(168, 85, 247, 0.15);
-    color: #a855f7;
+.notification-type-badge.welcome {
+    background: var(--accent);
+    color: #fff;
 }
 
-.notification-icon.default {
-    background: rgba(136, 136, 136, 0.15);
-    color: #888;
+.notification-type-badge.default {
+    background: var(--muted-foreground, #888);
+    color: #fff;
 }
 
 .notification-content {
@@ -7983,7 +8002,7 @@ body.has-audio-player footer {
 }
 
 .notification-dropdown-footer a {
-    color: #3b82f6;
+    color: var(--primary);
     font-size: 0.9rem;
     font-weight: 500;
     text-decoration: none;
@@ -7991,7 +8010,34 @@ body.has-audio-player footer {
 }
 
 .notification-dropdown-footer a:hover {
-    color: #60a5fa;
+    color: var(--accent);
+}
+
+/* Full-size variant, used in the dashboard's Notifications tab and the
+   Overview "Recent Notifications" preview - same component, more room. */
+.notification-item-full {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius-md, 0.5rem);
+}
+
+.notification-item-full:last-child {
+    border-bottom: none;
+}
+
+.notification-item-full .notification-avatar,
+.notification-item-full .notification-avatar-logo {
+    width: 48px;
+    height: 48px;
+}
+
+.notification-item-full .notification-title {
+    font-size: 0.95rem;
+}
+
+.notification-item-full .notification-message {
+    font-size: 0.85rem;
+    -webkit-line-clamp: 3;
 }
 
 /* Responsive */
@@ -8196,7 +8242,7 @@ body.has-audio-player footer {
 .nav-badge {
     position: absolute;
     right: 12px;
-    background: #E83628;
+    background: var(--primary);
     color: white;
     font-size: 0.7rem;
     font-weight: 600;
@@ -8577,60 +8623,12 @@ body.has-audio-player footer {
     color: #eab308;
 }
 
-/* Notification List */
+/* Notification List (Overview "Recent Notifications" preview container -
+   items themselves use the shared .notification-item styling above) */
 .notification-list {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-}
-
-.notification-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    border-radius: 10px;
-    transition: background 0.2s ease;
-}
-
-.notification-item:hover {
-    background: #1a1a1a;
-}
-
-.notification-item.unread {
-    background: rgba(232, 54, 40, 0.05);
-}
-
-.notification-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    background: #1a1a1a;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #888;
-    font-size: 0.9rem;
-}
-
-.notification-content {
-    flex: 1;
-    min-width: 0;
-}
-
-.notification-title {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #fff;
-    margin: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.notification-time {
-    font-size: 0.7rem;
-    color: #555;
 }
 
 /* Beats Grid */
@@ -9085,106 +9083,11 @@ body.has-audio-player footer {
     border-radius: 4px;
 }
 
-/* Notifications List (Full) - Facebook/Instagram Style */
+/* Notifications List (Full) - items use the shared .notification-item /
+   .notification-item-full styling defined earlier in this file. */
 .notifications-list {
     display: flex;
     flex-direction: column;
-}
-
-.notification-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid #1a1a1a;
-    cursor: pointer;
-    transition: background 0.15s ease;
-    position: relative;
-}
-
-.notification-row:hover {
-    background: rgba(255, 255, 255, 0.05);
-}
-
-.notification-row.unread {
-    background: rgba(59, 130, 246, 0.08);
-}
-
-.notification-row.unread:hover {
-    background: rgba(59, 130, 246, 0.12);
-}
-
-/* Circular notification icons like Facebook/Instagram */
-.notification-icon-lg {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.1rem;
-    flex-shrink: 0;
-}
-
-.notification-icon-lg.order-completed {
-    background: rgba(34, 197, 94, 0.15);
-    color: #22c55e;
-}
-
-.notification-icon-lg.download-ready {
-    background: rgba(59, 130, 246, 0.15);
-    color: #3b82f6;
-}
-
-.notification-icon-lg.download-expiring {
-    background: rgba(234, 179, 8, 0.15);
-    color: #eab308;
-}
-
-.notification-icon-lg.welcome {
-    background: rgba(168, 85, 247, 0.15);
-    color: #a855f7;
-}
-
-.notification-body {
-    flex: 1;
-    min-width: 0;
-}
-
-.notification-body h4 {
-    font-size: 0.95rem;
-    font-weight: 500;
-    color: #fff;
-    margin: 0 0 0.375rem;
-    line-height: 1.4;
-}
-
-.notification-row.unread .notification-body h4 {
-    font-weight: 600;
-}
-
-.notification-body p {
-    font-size: 0.85rem;
-    color: #888;
-    margin: 0 0 0.5rem;
-    line-height: 1.4;
-}
-
-.notification-timestamp {
-    font-size: 0.75rem;
-    color: #666;
-}
-
-/* Blue unread dot on left side - Facebook style */
-.unread-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #3b82f6;
-    position: absolute;
-    left: 6px;
-    top: 50%;
-    transform: translateY(-50%);
 }
 
 /* Profile Section */
