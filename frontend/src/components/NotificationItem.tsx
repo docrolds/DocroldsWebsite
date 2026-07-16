@@ -9,7 +9,7 @@ const TYPE_META: Record<string, { icon: string; badgeClass: string }> = {
   ORDER_COMPLETED: { icon: 'fa-check-circle', badgeClass: 'order' },
   DOWNLOAD_READY: { icon: 'fa-download', badgeClass: 'download' },
   DOWNLOAD_EXPIRING: { icon: 'fa-clock', badgeClass: 'expiring' },
-  WELCOME: { icon: 'fa-hand-sparkles', badgeClass: 'welcome' },
+  WELCOME: { icon: 'fa-star', badgeClass: 'welcome' },
 };
 
 function getTypeMeta(type: string): { icon: string; badgeClass: string } {
