@@ -27,6 +27,8 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import CustomerDashboard from './pages/CustomerDashboard';
 import LicenseAgreementPage from './pages/LicenseAgreementPage';
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import TermsOfServicePage from './pages/TermsOfServicePage';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminLoginPage from './pages/AdminLoginPage';
 import BookPage from './pages/BookPage';
@@ -134,6 +136,8 @@ function App() {
                 <Route path="/reset-password" element={<ResetPasswordPage />} />
                 <Route path="/dashboard" element={<CustomerDashboard />} />
                 <Route path="/licenses" element={<LicenseAgreementPage />} />
+                <Route path="/privacy" element={<PrivacyPolicyPage />} />
+                <Route path="/terms" element={<TermsOfServicePage />} />
                 <Route path="/book" element={<BookPage />} />
                 <Route path="/reschedule/:bookingNumber" element={<ReschedulePage />} />
                 <Route path="*" element={<NotFoundPage />} />

@@ -19,6 +19,8 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { config } from '../config/env';
 import { sendEmail } from '../services/email';
 import { captureError } from '../services/sentry';
+import { isValidEmail } from '../utils/text';
+import { getLicensePricing } from '../services/pricing';
 import {
   authenticateToken,
   requireAdmin,
@@ -77,14 +79,6 @@ function parseQueryString(param: string | string[] | undefined): string | undefi
 }
 
 /**
- * Email validation helper
- */
-const isValidEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
-
-/**
  * Process image to base64 with optimization
  */
 async function processPhotoToBase64(
@@ -140,7 +134,7 @@ async function sendWelcomeEmail(customer: { email: string; firstName?: string | 
       to: customer.email,
       subject: 'Welcome to Doc Rolds',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #fff; padding: 30px;">
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #1a1a1a; color: #fff; padding: 30px;">
           <h1 style="color: #E83628; text-align: center;">Welcome to Doc Rolds, ${firstName}!</h1>
           <p style="color: #ccc; font-size: 14px; line-height: 1.6;">
             Your account has been created. You can now browse beats, manage your orders, and book studio sessions from your dashboard.
@@ -374,12 +368,14 @@ router.post(
 
       const resetUrl = `${config.frontendUrl}/reset-password?token=${token}`;
 
-      try {
-        await sendEmail({
-          to: customer.email,
-          subject: 'Reset Your Doc Rolds Password',
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #fff; padding: 30px;">
+      // Fire-and-forget: don't let email-provider latency create a timing
+      // difference between the "registered" and "unregistered" response
+      // paths (both should respond equally fast).
+      sendEmail({
+        to: customer.email,
+        subject: 'Reset Your Doc Rolds Password',
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #1a1a1a; color: #fff; padding: 30px;">
               <h1 style="color: #E83628; text-align: center;">Reset Your Password</h1>
               <p style="color: #ccc; font-size: 14px; line-height: 1.6;">
                 We received a request to reset your Doc Rolds password. Click the button below to choose a new one - this link expires in 1 hour.
@@ -398,11 +394,10 @@ router.post(
               </p>
             </div>
           `,
-        });
-      } catch (error) {
+      }).catch((error) => {
         console.error('[EMAIL] Failed to send password reset email:', (error as Error).message);
         captureError(error, { email: customer.email, context: 'password-reset-email' });
-      }
+      });
     }
 
     res.json({ message: genericMessage });
@@ -453,7 +448,7 @@ router.post(
       },
     });
 
-    console.log('[CUSTOMERS] Password reset completed for:', customer.email);
+    console.log('[CUSTOMERS] Password reset completed for customer:', customer.id);
 
     res.json({ message: 'Password reset successfully' });
   })
@@ -731,7 +726,7 @@ router.get(
       orderBy: { createdAt: 'desc' },
     });
 
-    res.json(likes.map((l) => l.beat));
+    res.json(likes.map((l) => ({ ...l.beat, licensePricing: getLicensePricing(l.beat) })));
   })
 );
 

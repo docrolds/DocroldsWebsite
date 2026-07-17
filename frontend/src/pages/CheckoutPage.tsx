@@ -74,6 +74,7 @@ export default function CheckoutPage(): ReactNode {
   const [error, setError] = useState<string>('');
   const [squareLoading, setSquareLoading] = useState<boolean>(true);
   const [card, setCard] = useState<SquareCard | null>(null);
+  const [agreedToTerms, setAgreedToTerms] = useState<boolean>(false);
   const cardContainerRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState<CheckoutFormData>({
@@ -157,6 +158,11 @@ export default function CheckoutPage(): ReactNode {
 
     if (!formData.email) {
       setError('Email is required');
+      return;
+    }
+
+    if (!agreedToTerms) {
+      setError('You must agree to the Terms of Service and Privacy Policy to complete your purchase');
       return;
     }
 
@@ -371,9 +377,25 @@ export default function CheckoutPage(): ReactNode {
                 </div>
               )}
 
+              <div className="form-field-checkbox">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={agreedToTerms}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setAgreedToTerms(e.target.checked)}
+                    required
+                  />
+                  <span>
+                    I agree to the <Link to="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</Link>,{' '}
+                    <Link to="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</Link>, and{' '}
+                    <Link to="/licenses" target="_blank" rel="noopener noreferrer">License Agreement</Link>
+                  </span>
+                </label>
+              </div>
+
               <button
                 type="submit"
-                disabled={loading || squareLoading || !card}
+                disabled={loading || squareLoading || !card || !agreedToTerms}
                 className="checkout-submit-btn"
                 aria-busy={loading}
               >

@@ -22,6 +22,7 @@ import {
 } from '../middleware';
 import { sendEmail } from '../services/email';
 import { captureError } from '../services/sentry';
+import { escapeHtml } from '../utils/text';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -68,19 +69,6 @@ async function generateBookingNumber(): Promise<string> {
   const sequence = count + 1;
   return `BK-${year}-${sequence.toString().padStart(5, '0')}`;
 }
-
-/**
- * Escape HTML for email templates
- */
-const escapeHtml = (text: string | null | undefined): string => {
-  if (!text) return '';
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-};
 
 /**
  * Add days to a date
@@ -869,8 +857,13 @@ async function sendBookingReminderEmail(booking: BookingForEmail): Promise<void>
 /**
  * Sends session reminders for bookings scheduled roughly 24 hours out.
  * Called both by an in-process interval (index.ts) and by the manual
- * admin-triggered endpoint below, so it must be safe to call repeatedly -
- * the reminderSent flag makes each booking eligible exactly once.
+ * admin-triggered endpoint below, so it must be safe to call concurrently -
+ * each booking is atomically claimed (a conditional update that only
+ * succeeds if reminderSent is still false) before sending, so two
+ * overlapping sweeps can't both send the same reminder. A send that fails
+ * after a successful claim won't retry on the next sweep - a duplicate
+ * reminder is worse than an occasional missed one, which can still be
+ * triggered manually via this same function/endpoint.
  */
 export async function sendPendingBookingReminders(): Promise<{ sent: number; failed: number }> {
   const windowStart = new Date(Date.now() + 23 * 60 * 60 * 1000);
@@ -888,12 +881,18 @@ export async function sendPendingBookingReminders(): Promise<{ sent: number; fai
   let failed = 0;
 
   for (const booking of bookings) {
+    const claim = await prisma.booking.updateMany({
+      where: { id: booking.id, reminderSent: false },
+      data: { reminderSent: true, reminderSentAt: new Date() },
+    });
+
+    if (claim.count === 0) {
+      // Another concurrent sweep already claimed this booking.
+      continue;
+    }
+
     try {
       await sendBookingReminderEmail(booking);
-      await prisma.booking.update({
-        where: { id: booking.id },
-        data: { reminderSent: true, reminderSentAt: new Date() },
-      });
       sent++;
       console.log('[BOOKINGS] Reminder sent:', booking.bookingNumber);
     } catch (error) {
@@ -1411,7 +1410,7 @@ async function sendAdminNotificationEmail(booking: BookingForEmail): Promise<voi
             </tr>
             <tr>
               <td style="padding: 8px 0; color: #999;">Email:</td>
-              <td style="padding: 8px 0;"><a href="mailto:${booking.email}" style="color: #E83628;">${booking.email}</a></td>
+              <td style="padding: 8px 0;"><a href="mailto:${encodeURIComponent(booking.email)}" style="color: #E83628;">${escapeHtml(booking.email)}</a></td>
             </tr>
             ${booking.artistName ? `
             <tr>

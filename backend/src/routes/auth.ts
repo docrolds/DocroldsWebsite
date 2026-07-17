@@ -21,6 +21,7 @@ import {
   ForbiddenError,
   ConflictError,
 } from '../middleware';
+import { isValidEmail } from '../utils/text';
 import type {
   AdminLoginRequest,
   AdminLoginResponse,
@@ -44,14 +45,6 @@ function parseQueryString(param: string | string[] | undefined): string | undefi
     return param[0];
   }
   return param;
-}
-
-/**
- * Validates email format
- */
-function isValidEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
 }
 
 // ===========================================

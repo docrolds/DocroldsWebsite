@@ -19,23 +19,11 @@ import { asyncHandler, BadRequestError, NotFoundError } from '../middleware';
 import { config } from '../config/env';
 import { sendEmail } from '../services/email';
 import { captureError } from '../services/sentry';
+import { escapeHtml } from '../utils/text';
 import type {
   PhotoUploadRequest,
   TeamMemberRequest,
 } from '../types';
-
-/**
- * Escape HTML for email templates
- */
-const escapeHtml = (text: string | null | undefined): string => {
-  if (!text) return '';
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-};
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -644,6 +632,12 @@ router.get(
   })
 );
 
+interface UpdateBookingStatusRequest {
+  status?: string;
+  notes?: string;
+  scheduledAt?: string;
+}
+
 /**
  * PATCH /api/admin/bookings/:id
  * Update booking status or details
@@ -654,7 +648,7 @@ router.patch(
   requireAdmin,
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const id = req.params.id as string;
-    const { status, notes, scheduledAt } = req.body;
+    const { status, notes, scheduledAt } = req.body as UpdateBookingStatusRequest;
 
     const updateData: Prisma.BookingUpdateInput = {};
 

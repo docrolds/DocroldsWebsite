@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useToast } from '../context/NotificationContext';
 import { API_URL } from '../config';
 
 interface ResetPasswordResponse {
@@ -9,6 +10,7 @@ interface ResetPasswordResponse {
 export default function ResetPasswordPage(): JSX.Element {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const toast = useToast();
   const token = searchParams.get('token') || '';
 
   const [newPassword, setNewPassword] = useState<string>('');
@@ -46,6 +48,7 @@ export default function ResetPasswordPage(): JSX.Element {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to reset password';
       setError(message);
+      toast.error('Reset Failed', message);
     } finally {
       setLoading(false);
     }

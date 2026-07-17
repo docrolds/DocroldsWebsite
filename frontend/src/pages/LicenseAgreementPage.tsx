@@ -1,5 +1,6 @@
 import { useState, useEffect, ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { API_URL } from '../config';
 
 // ============================================
 // Type Definitions
@@ -57,6 +58,12 @@ type LicenseDetails = Record<LicenseType, LicenseDetail>;
 export default function LicenseAgreementPage(): ReactNode {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<LicenseType>('standard');
+  const beatId = searchParams.get('beatId');
+  // Prices default to the standard $50/$150 tiers; if this page was reached
+  // from a specific beat (via ?beatId=), the fetch below overrides them
+  // with that beat's actual license pricing so the numbers shown always
+  // match what was (or would be) charged - see backend/src/services/pricing.ts.
+  const [beatPricing, setBeatPricing] = useState<{ standard: number; unlimited: number } | null>(null);
 
   // Check URL params for initial tab
   useEffect(() => {
@@ -66,11 +73,32 @@ export default function LicenseAgreementPage(): ReactNode {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    if (!beatId) {
+      setBeatPricing(null);
+      return;
+    }
+    fetch(`${API_URL}/beats/${beatId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.licensePricing) {
+          setBeatPricing(data.licensePricing);
+        }
+      })
+      .catch(() => {
+        // Fall back to default pricing display - not critical enough to
+        // show an error for a reference/terms page.
+      });
+  }, [beatId]);
+
+  const standardPrice = beatPricing?.standard ?? 50;
+  const unlimitedPrice = beatPricing?.unlimited ?? 150;
+
   const licenseDetails: LicenseDetails = {
     standard: {
       title: 'Standard Lease Agreement',
       subtitle: 'Basic License for Independent Artists',
-      price: '$50',
+      price: `$${standardPrice}`,
       overview: 'The Standard Lease grants you a non-exclusive license to use the beat for your musical composition. This license is ideal for artists who are starting out or releasing singles with moderate distribution expectations. Producer retains all master rights.',
       deliverables: [
         'High-Quality MP3 File (320kbps)',
@@ -117,7 +145,7 @@ export default function LicenseAgreementPage(): ReactNode {
     unlimited: {
       title: 'Unlimited Lease Agreement',
       subtitle: 'Premium License for Serious Artists',
-      price: '$150',
+      price: `$${unlimitedPrice}`,
       popular: true,
       overview: 'The Unlimited Lease provides maximum flexibility with no stream caps or distribution limits. Perfect for artists expecting significant reach or planning major releases. Includes high-quality WAV files for professional mixing. Producer retains all master rights.',
       deliverables: [
@@ -226,6 +254,11 @@ export default function LicenseAgreementPage(): ReactNode {
         <div className="license-header">
           <h1>Beat License Agreements</h1>
           <p>Choose the license that fits your needs. All licenses are legally binding agreements.</p>
+          {beatPricing && (
+            <p className="license-beat-pricing-note">
+              Prices shown reflect this beat's specific pricing.
+            </p>
+          )}
         </div>
 
         {/* License Tabs */}
@@ -455,8 +488,8 @@ export default function LicenseAgreementPage(): ReactNode {
               <tbody>
                 <tr>
                   <td>Price</td>
-                  <td>$50</td>
-                  <td className="popular">$150</td>
+                  <td>${standardPrice}</td>
+                  <td className="popular">${unlimitedPrice}</td>
                   <td>Contact Us</td>
                 </tr>
                 <tr>

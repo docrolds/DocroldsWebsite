@@ -30,6 +30,7 @@ export default function CustomerRegisterPage(): JSX.Element {
   });
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
+  const [agreedToTerms, setAgreedToTerms] = useState<boolean>(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     setFormData(prev => ({
@@ -49,6 +50,11 @@ export default function CustomerRegisterPage(): JSX.Element {
 
     if (formData.password.length < 6) {
       setError('Password must be at least 6 characters');
+      return;
+    }
+
+    if (!agreedToTerms) {
+      setError('You must agree to the Terms of Service and Privacy Policy to create an account');
       return;
     }
 
@@ -202,9 +208,24 @@ export default function CustomerRegisterPage(): JSX.Element {
               </div>
             </div>
 
+            <div className="form-field-checkbox">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={agreedToTerms}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAgreedToTerms(e.target.checked)}
+                  required
+                />
+                <span>
+                  I agree to the <Link to="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</Link> and{' '}
+                  <Link to="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</Link>
+                </span>
+              </label>
+            </div>
+
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !agreedToTerms}
               className="auth-submit-btn"
               aria-busy={loading}
             >

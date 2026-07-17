@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useToast } from '../context/NotificationContext';
 import { API_URL } from '../config';
 
 interface ForgotPasswordResponse {
@@ -7,6 +8,7 @@ interface ForgotPasswordResponse {
 }
 
 export default function ForgotPasswordPage(): JSX.Element {
+  const toast = useToast();
   const [email, setEmail] = useState<string>('');
   const [submitted, setSubmitted] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
@@ -34,6 +36,7 @@ export default function ForgotPasswordPage(): JSX.Element {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Something went wrong';
       setError(message);
+      toast.error('Request Failed', message);
     } finally {
       setLoading(false);
     }

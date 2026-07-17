@@ -1,4 +1,5 @@
 import { useState, useEffect, FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { API_URL } from '../config';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -111,6 +112,13 @@ function Footer(): JSX.Element {
         <p className="mt-2 text-sm">
           Crafted with passion for independent artists
         </p>
+        <div className="footer-legal-links">
+          <Link to="/terms">Terms of Service</Link>
+          <span aria-hidden="true">·</span>
+          <Link to="/privacy">Privacy Policy</Link>
+          <span aria-hidden="true">·</span>
+          <Link to="/licenses">License Agreement</Link>
+        </div>
       </div>
     </footer>
   );

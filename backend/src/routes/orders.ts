@@ -16,7 +16,8 @@ import * as fs from 'fs';
 import { config } from '../config/env';
 import { sendEmail } from '../services/email';
 import { captureError } from '../services/sentry';
-import { getLicensePricing, DEFAULT_STANDARD_PRICE, UNLIMITED_MULTIPLIER } from '../services/pricing';
+import { getLicensePricing } from '../services/pricing';
+import { isValidEmail, escapeHtml } from '../utils/text';
 import { paymentLimiter, authenticateToken, requireAdmin } from '../middleware';
 import {
   asyncHandler,
@@ -59,14 +60,6 @@ console.log(
 // ===========================================
 
 /**
- * Email validation helper
- */
-const isValidEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
-
-/**
  * Timing-safe comparison for access tokens (e.g. Order.confirmationToken),
  * used to gate lookups keyed by a guessable/sequential public ID.
  */
@@ -74,19 +67,6 @@ const isValidToken = (provided: string, expected: string): boolean => {
   const a = Buffer.from(provided);
   const b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
-};
-
-/**
- * Escape HTML for email templates
- */
-const escapeHtml = (text: string | null | undefined): string => {
-  if (!text) return '';
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 };
 
 /**
@@ -153,6 +133,7 @@ interface OrderWithRelations {
   };
   items: Array<{
     beat: {
+      id: string;
       title: string;
     };
     licenseType: string;
@@ -237,7 +218,7 @@ async function sendDownloadEmail(order: OrderWithRelations): Promise<void> {
         <tr>
             <td style="padding: 10px; border-bottom: 1px solid #eee;">${escapeHtml(item.beat.title)}</td>
             <td style="padding: 10px; border-bottom: 1px solid #eee;">
-                <a href="${licenseUrl}?type=${item.licenseType?.toLowerCase() || 'standard'}" style="color: #E83628; text-decoration: none;">
+                <a href="${licenseUrl}?type=${item.licenseType?.toLowerCase() || 'standard'}&beatId=${item.beat.id}" style="color: #E83628; text-decoration: none;">
                     ${escapeHtml(item.licenseName)}
                 </a>
             </td>
@@ -362,7 +343,7 @@ async function sendAdminSaleNotificationEmail(order: OrderWithRelations): Promis
           <table style="width: 100%; color: #fff;">
             <tr>
               <td style="padding: 8px 0; color: #999;">Email:</td>
-              <td style="padding: 8px 0;"><a href="mailto:${order.customer.email}" style="color: #E83628;">${order.customer.email}</a></td>
+              <td style="padding: 8px 0;"><a href="mailto:${encodeURIComponent(order.customer.email)}" style="color: #E83628;">${escapeHtml(order.customer.email)}</a></td>
             </tr>
             ${order.customer.firstName ? `
             <tr>
@@ -413,12 +394,11 @@ async function sendAdminSaleNotificationEmail(order: OrderWithRelations): Promis
 interface LicenseTierConfig {
   type: LicenseType;
   name: string;
-  price: number;
 }
 
 const LICENSE_TIERS: LicenseTierConfig[] = [
-  { type: 'STANDARD', name: 'Standard Lease', price: DEFAULT_STANDARD_PRICE },
-  { type: 'UNLIMITED', name: 'Unlimited Lease', price: DEFAULT_STANDARD_PRICE * UNLIMITED_MULTIPLIER },
+  { type: 'STANDARD', name: 'Standard Lease' },
+  { type: 'UNLIMITED', name: 'Unlimited Lease' },
 ];
 
 function getLicenseTier(

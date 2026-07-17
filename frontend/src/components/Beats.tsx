@@ -356,7 +356,7 @@ function Beats(): JSX.Element {
                     </Link>
                   )}
                   <Link
-                    to={`/licenses?type=${license.id}`}
+                    to={`/licenses?type=${license.id}&beatId=${selectedBeatForLicense.id}`}
                     className="license-terms-link"
                     onClick={() => setSelectedBeatForLicense(null)}
                   >

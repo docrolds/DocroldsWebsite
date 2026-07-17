@@ -2413,6 +2413,30 @@ footer::before {
     line-height: 1.7;
 }
 
+.footer-legal-links {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.footer-legal-links a {
+    color: #888;
+    font-size: 0.8rem;
+    text-decoration: none;
+}
+
+.footer-legal-links a:hover {
+    color: var(--primary);
+    text-decoration: underline;
+}
+
+.footer-legal-links span {
+    color: #444;
+    font-size: 0.75rem;
+}
+
 nav {
     background: rgba(0, 0, 0, 0.8);
     padding: 1.5rem 2rem;
@@ -9188,6 +9212,35 @@ body.has-audio-player footer {
     text-decoration: underline;
 }
 
+.form-field-checkbox {
+    margin: 0.25rem 0;
+}
+
+.form-field-checkbox label {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    font-size: 0.82rem;
+    color: #a1a1aa;
+    cursor: pointer;
+    line-height: 1.5;
+}
+
+.form-field-checkbox input[type="checkbox"] {
+    margin-top: 0.2rem;
+    flex-shrink: 0;
+    accent-color: var(--primary);
+}
+
+.form-field-checkbox a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.form-field-checkbox a:hover {
+    text-decoration: underline;
+}
+
 .form-field input,
 .form-field select,
 .form-field textarea {
@@ -10077,6 +10130,12 @@ body.has-audio-player footer {
 .license-header p {
     color: #9ca3af;
     font-size: 1.05rem;
+}
+
+.license-beat-pricing-note {
+    color: var(--primary) !important;
+    font-size: 0.85rem !important;
+    margin-top: 0.5rem;
 }
 
 /* License Tabs */

@@ -686,7 +686,7 @@ function BeatsPage(): ReactNode {
 
   const handleAddToCart = (license: LicenseTier): void => {
     if (selectedBeatForLicense) {
-      const added = addToCart(selectedBeatForLicense as any, license);
+      const added = addToCart(selectedBeatForLicense, license);
       if (added) {
         toast.success(
           'Added to Cart',
@@ -978,7 +978,7 @@ function BeatsPage(): ReactNode {
                     </Link>
                   )}
                   <Link
-                    to={`/licenses?type=${license.id}`}
+                    to={`/licenses?type=${license.id}&beatId=${selectedBeatForLicense.id}`}
                     className="license-terms-link"
                     onClick={() => setSelectedBeatForLicense(null)}
                   >

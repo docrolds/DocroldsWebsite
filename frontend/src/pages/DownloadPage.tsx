@@ -166,7 +166,7 @@ export default function DownloadPage(): ReactNode {
                 <div className="download-item-info">
                   <h2>{item.beatTitle}</h2>
                   <Link
-                    to={`/licenses?type=${item.licenseType?.toLowerCase() || 'standard'}`}
+                    to={`/licenses?type=${item.licenseType?.toLowerCase() || 'standard'}&beatId=${item.beatId}`}
                     className="download-license-link"
                   >
                     {item.license}
@@ -202,7 +202,7 @@ export default function DownloadPage(): ReactNode {
                   <i className="fas fa-file-contract"></i>
                   {item.beatTitle} - Your License Terms
                 </h3>
-                <Link to={`/licenses?type=${licenseType}`} className="download-info-link">
+                <Link to={`/licenses?type=${licenseType}&beatId=${item.beatId}`} className="download-info-link">
                   View Full Agreement
                   <i className="fas fa-arrow-right"></i>
                 </Link>

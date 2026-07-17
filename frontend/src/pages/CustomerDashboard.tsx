@@ -2,6 +2,7 @@ import { useState, useEffect, ChangeEvent, FormEvent } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useCustomerAuth, Customer } from '../context/CustomerAuthContext';
 import { useToast, useNotifications, Notification, getNotificationActionUrl } from '../context/NotificationContext';
+import { LicensePricing } from '../context/CartContext';
 import NotificationItem from '../components/NotificationItem';
 import { API_URL } from '../config';
 
@@ -17,6 +18,7 @@ interface Beat {
   bpm: number;
   key?: string;
   price?: number;
+  licensePricing?: LicensePricing;
   coverArt?: string;
   audioUrl?: string;
   producedBy?: string;
@@ -683,7 +685,7 @@ export default function CustomerDashboard(): JSX.Element | null {
                           <div className="like-info">
                             <h4>{beat.title}</h4>
                             <p>{beat.genre} • {beat.bpm} BPM</p>
-                            <span className="like-price">From ${beat.price || 50}</span>
+                            <span className="like-price">From ${beat.licensePricing?.standard ?? beat.price ?? 50}</span>
                           </div>
                         </div>
                       ))}

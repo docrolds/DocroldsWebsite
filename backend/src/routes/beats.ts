@@ -70,6 +70,23 @@ const sanitizeFilename = (filename: string): string => {
   return filename.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 200);
 };
 
+/**
+ * Parses an admin-submitted beat price. Returns null if not provided
+ * (falls back to default $50/$150 tiers - see services/pricing.ts), or
+ * throws if provided but not a finite positive number, so a typo or
+ * malformed value can't silently become NaN/zero in the database.
+ */
+function parseBeatPrice(price: unknown): number | null {
+  if (price === undefined || price === null || price === '') {
+    return null;
+  }
+  const parsed = parseFloat(String(price));
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new BadRequestError('Price must be a positive number');
+  }
+  return parsed;
+}
+
 // Ensure upload directories exist before any upload is attempted. On a
 // fresh deploy 'uploads/' is gitignored and otherwise only ever created
 // as an incidental side effect of the first cover-art upload, so a
@@ -396,7 +413,7 @@ router.post(
         bpm: bpm ? parseInt(String(bpm)) : null,
         key: key || null,
         duration: extractedDuration,
-        price: price ? parseFloat(String(price)) : null,
+        price: parseBeatPrice(price),
         producedBy: producedBy && producedBy.trim() ? producedBy.trim() : null,
         audioFile,
         wavFile,
@@ -461,7 +478,7 @@ router.put(
       ...(bpm && { bpm: parseInt(String(bpm)) }),
       ...(key && { key }),
       ...(duration && { duration: parseInt(String(duration)) }),
-      ...(price && { price: parseFloat(String(price)) }),
+      ...(price && { price: parseBeatPrice(price) }),
       // Handle producedBy - allow empty string to clear, keep existing if undefined
       producedBy: producedBy !== undefined ? (producedBy.trim() || null) : beat.producedBy,
       // Handle soldExclusively fields
