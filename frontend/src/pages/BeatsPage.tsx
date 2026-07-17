@@ -1,7 +1,7 @@
 import { useState, useEffect, ReactNode, MouseEvent, ChangeEvent, KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { API_URL } from '../config';
-import { useCart, LicenseTier } from '../context/CartContext';
+import { useCart, LicenseTier, LicensePricing, getLicenseTiersForBeat } from '../context/CartContext';
 import { useAudioPlayer, Beat as AudioBeat } from '../context/AudioPlayerContext';
 import { useToast } from '../context/NotificationContext';
 import { useCustomerAuth, Customer } from '../context/CustomerAuthContext';
@@ -27,6 +27,8 @@ interface Beat {
   likeCount?: number;
   commentCount?: number;
   soldExclusively?: boolean;
+  licensePricing?: LicensePricing;
+  [key: string]: unknown; // Index signature for cart compatibility
 }
 
 interface CommentCustomer {
@@ -939,7 +941,7 @@ function BeatsPage(): ReactNode {
             </div>
 
             <div className="license-options">
-              {licenseTiers.map((license: LicenseTier) => (
+              {getLicenseTiersForBeat(selectedBeatForLicense, licenseTiers).map((license: LicenseTier) => (
                 <div
                   key={license.id}
                   className={`license-option ${license.id === 'unlimited' ? 'popular' : ''}`}

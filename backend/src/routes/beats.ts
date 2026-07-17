@@ -22,6 +22,7 @@ import {
   optionalCustomerAuth,
 } from '../middleware';
 import { asyncHandler, BadRequestError, NotFoundError, ConflictError } from '../middleware';
+import { getLicensePricing } from '../services/pricing';
 import type {
   AuthenticatedCustomerRequest,
   OptionalCustomerRequest,
@@ -271,6 +272,7 @@ router.get(
       likeCount: beat._count.likes,
       commentCount: beat._count.comments,
       _count: undefined,
+      licensePricing: getLicensePricing(beat),
     }));
 
     res.json(beatsWithCounts);
@@ -306,6 +308,7 @@ router.get(
       likeCount: beat._count.likes,
       commentCount: beat._count.comments,
       _count: undefined,
+      licensePricing: getLicensePricing(beat),
     });
   })
 );

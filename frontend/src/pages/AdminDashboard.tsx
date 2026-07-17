@@ -289,7 +289,7 @@ export default function AdminDashboard(): JSX.Element | null {
       const [beatsRes, teamRes, usersRes, customersRes, ordersRes, bookingsRes, promosRes] = await Promise.all([
         fetch(`${API_URL}/beats`, { headers }),
         fetch(`${API_URL}/photos?category=team`, { headers }),
-        fetch(`${API_URL}/users`, { headers }),
+        fetch(`${API_URL}/auth/users`, { headers }),
         fetch(`${API_URL}/customers/admin/list`, { headers }),
         fetch(`${API_URL}/admin/orders`, { headers }),
         fetch(`${API_URL}/admin/bookings`, { headers }),
@@ -397,7 +397,7 @@ export default function AdminDashboard(): JSX.Element | null {
   const deleteUser = async (id: string): Promise<void> => {
     if (!confirm('Are you sure you want to delete this user?')) return;
     try {
-      await fetch(`${API_URL}/users/${id}`, {
+      await fetch(`${API_URL}/auth/users/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -1924,10 +1924,15 @@ function AdminModal({ type, item, onClose, onSave, token }: AdminModalProps): JS
   useEffect(() => {
     if (item) {
       setFormData(item);
+    } else if (type === 'team') {
+      // The backend requires a category on create; this modal only ever
+      // manages team-member photos, so default it rather than adding a
+      // form field the admin would always leave on "team" anyway.
+      setFormData({ category: 'team' });
     } else {
       setFormData({});
     }
-  }, [item]);
+  }, [item, type]);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>): void => {
     const target = e.target;
@@ -1962,7 +1967,7 @@ function AdminModal({ type, item, onClose, onSave, token }: AdminModalProps): JS
         endpoint = teamItem ? `${API_URL}/photos/${teamItem.id}` : `${API_URL}/photos`;
       } else if (type === 'user') {
         const userItem = item as User | null;
-        endpoint = userItem ? `${API_URL}/users/${userItem.id}` : `${API_URL}/users`;
+        endpoint = userItem ? `${API_URL}/auth/users/${userItem.id}` : `${API_URL}/auth/users`;
       } else if (type === 'customer') {
         const customerItem = item as Customer;
         endpoint = `${API_URL}/customers/admin/${customerItem.id}`;

@@ -65,6 +65,8 @@ model Customer {
   isBlocked        Boolean    @default(false)
   blockedAt        DateTime?
   blockedReason    String?
+  passwordResetToken       String?   @unique
+  passwordResetExpiresAt   DateTime?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 

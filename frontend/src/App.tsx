@@ -23,6 +23,8 @@ import OrderConfirmationPage from './pages/OrderConfirmationPage';
 import DownloadPage from './pages/DownloadPage';
 import CustomerLoginPage from './pages/CustomerLoginPage';
 import CustomerRegisterPage from './pages/CustomerRegisterPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import CustomerDashboard from './pages/CustomerDashboard';
 import LicenseAgreementPage from './pages/LicenseAgreementPage';
 import AdminDashboard from './pages/AdminDashboard';
@@ -128,6 +130,8 @@ function App() {
                 <Route path="/download/:token" element={<DownloadPage />} />
                 <Route path="/login" element={<CustomerLoginPage />} />
                 <Route path="/register" element={<CustomerRegisterPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
                 <Route path="/dashboard" element={<CustomerDashboard />} />
                 <Route path="/licenses" element={<LicenseAgreementPage />} />
                 <Route path="/book" element={<BookPage />} />

@@ -15,6 +15,12 @@ export interface LicenseTier {
   features: string[];
 }
 
+/** Server-computed license prices for a specific beat (see backend services/pricing.ts) */
+export interface LicensePricing {
+  standard: number;
+  unlimited: number;
+}
+
 /** Beat item from the catalog */
 export interface Beat {
   id: string | number;
@@ -26,7 +32,23 @@ export interface Beat {
   imageUrl?: string;
   audioUrl?: string;
   price?: number;
+  licensePricing?: LicensePricing;
   [key: string]: unknown; // Allow additional properties
+}
+
+/**
+ * Returns the license tiers for a specific beat, with Standard/Unlimited
+ * prices overridden from the beat's own licensePricing (if the backend
+ * provided it) instead of the fixed defaults - so a custom-priced beat
+ * shows and charges the right amount everywhere it's offered.
+ */
+export function getLicenseTiersForBeat(beat: Beat, baseTiers: LicenseTier[]): LicenseTier[] {
+  if (!beat.licensePricing) return baseTiers;
+  return baseTiers.map((tier) => {
+    if (tier.id === 'standard') return { ...tier, price: beat.licensePricing!.standard };
+    if (tier.id === 'unlimited') return { ...tier, price: beat.licensePricing!.unlimited };
+    return tier;
+  });
 }
 
 /** Cart item combining a beat with its selected license */

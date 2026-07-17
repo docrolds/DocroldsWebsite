@@ -16,10 +16,26 @@ import {
   requireAdmin,
 } from '../middleware';
 import { asyncHandler, BadRequestError, NotFoundError } from '../middleware';
+import { config } from '../config/env';
+import { sendEmail } from '../services/email';
+import { captureError } from '../services/sentry';
 import type {
   PhotoUploadRequest,
   TeamMemberRequest,
 } from '../types';
+
+/**
+ * Escape HTML for email templates
+ */
+const escapeHtml = (text: string | null | undefined): string => {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -278,8 +294,11 @@ router.put(
  */
 router.get(
   '/photos',
-  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
-    const photos = await prisma.photo.findMany();
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const category = parseQueryString(req.query.category);
+    const photos = await prisma.photo.findMany({
+      where: category ? { category } : undefined,
+    });
     res.json(photos);
   })
 );
@@ -525,10 +544,10 @@ router.get(
       completedOrders,
       pendingOrders,
       totalRevenue: parseFloat(totalRevenue.toFixed(2)),
-      avgOrderValue: parseFloat(avgOrderValue.toFixed(2)),
+      averageOrderValue: parseFloat(avgOrderValue.toFixed(2)),
       ordersByStatus,
       ordersByPaymentStatus,
-      revenueByDay,
+      ordersOverTime: revenueByDay,
       comparison: {
         prevRevenue: parseFloat(prevRevenue.toFixed(2)),
         revenueChange: parseFloat(revenueChange.toFixed(1)),
@@ -626,10 +645,10 @@ router.get(
 );
 
 /**
- * PUT /api/admin/bookings/:id
+ * PATCH /api/admin/bookings/:id
  * Update booking status or details
  */
-router.put(
+router.patch(
   '/admin/bookings/:id',
   authenticateToken,
   requireAdmin,
@@ -655,6 +674,11 @@ router.put(
       updateData.scheduledAt = new Date(scheduledAt);
     }
 
+    const previousBooking = await prisma.booking.findUnique({ where: { id } });
+    if (!previousBooking) {
+      throw new NotFoundError('Booking not found');
+    }
+
     const booking = await prisma.booking.update({
       where: { id },
       data: updateData,
@@ -664,6 +688,36 @@ router.put(
     });
 
     console.log(`[ADMIN] Booking ${booking.bookingNumber} updated - Status: ${booking.status}`);
+
+    // Only notify on a genuine transition into CANCELLED - the refund
+    // route has its own combined refund+cancellation email and sets
+    // CANCELLED directly via a separate code path, so there's no overlap.
+    if (status === 'CANCELLED' && previousBooking.status !== 'CANCELLED') {
+      try {
+        await sendEmail({
+          to: booking.email,
+          subject: `Booking Cancelled - #${booking.bookingNumber}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #1a1a1a; color: #fff; padding: 30px;">
+              <h1 style="color: #E83628; text-align: center;">Booking Cancelled</h1>
+              <p>Hey ${escapeHtml(booking.name)},</p>
+              <p>Your booking <strong>#${booking.bookingNumber}</strong> has been cancelled.</p>
+              <p>If you have any questions or want to book a new session, reach out anytime.</p>
+              <p style="color: #999; font-size: 12px; margin-top: 30px; text-align: center;">
+                Questions? Call us at <a href="tel:+17272825449" style="color: #fff; font-weight: bold;">(727) 282-5449</a>
+              </p>
+              <hr style="border: none; border-top: 1px solid #333; margin: 30px 0;">
+              <p style="color: #999; font-size: 12px; text-align: center;">
+                Doc Rolds Music - <a href="${config.frontendUrl}" style="color: #E83628;">docrolds.com</a>
+              </p>
+            </div>
+          `,
+        });
+      } catch (emailError) {
+        console.error('[ADMIN] Failed to send booking cancellation email:', (emailError as Error).message);
+        captureError(emailError, { bookingNumber: booking.bookingNumber, context: 'booking-cancellation-email' });
+      }
+    }
 
     res.json(booking);
   })

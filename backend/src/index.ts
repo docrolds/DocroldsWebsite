@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import app from './app';
 import { config } from './config/env';
+import { sendPendingBookingReminders } from './routes/bookings';
 
 const prisma = new PrismaClient();
 
@@ -89,6 +90,18 @@ async function startServer(): Promise<void> {
       console.log(`[STARTUP] ✓ Server running on http://localhost:${config.port}`);
       console.log(`[STARTUP] Environment: ${config.nodeEnv}`);
     });
+
+    // Step 4: Start the booking-reminder sweep. Runs hourly while this
+    // process is alive; the reminderSent flag makes it safe to call
+    // repeatedly. If the web service ever sleeps between requests
+    // (free/starter Render tier), reminders resume once it wakes - the
+    // POST /api/bookings/send-reminders endpoint exists as a backup for
+    // triggering it externally in the meantime.
+    setInterval(() => {
+      sendPendingBookingReminders().catch((error) => {
+        console.error('[BOOKINGS] Reminder sweep failed:', error);
+      });
+    }, 60 * 60 * 1000);
 
   } catch (error) {
     console.error('[STARTUP] Server startup error:', error);

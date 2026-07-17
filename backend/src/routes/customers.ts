@@ -14,6 +14,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import sharp from 'sharp';
+import * as crypto from 'crypto';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { config } from '../config/env';
 import { sendEmail } from '../services/email';
@@ -329,6 +330,132 @@ router.post(
         profilePicture: customer.profilePicture,
       },
     } as CustomerLoginResponse);
+  })
+);
+
+// ===========================================
+// PASSWORD RESET (self-service)
+// ===========================================
+
+interface ForgotPasswordRequest {
+  email: string;
+}
+
+/**
+ * POST /api/customers/forgot-password
+ * Starts a self-service password reset. Always returns the same generic
+ * message regardless of whether the email matched an account, to avoid
+ * leaking which emails are registered.
+ */
+router.post(
+  '/forgot-password',
+  authLimiter,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { email } = req.body as ForgotPasswordRequest;
+    const genericMessage = 'If an account exists for that email, a reset link has been sent.';
+
+    if (!email || !isValidEmail(email)) {
+      // Still return the generic message - don't reveal validation details
+      // that could help enumerate accounts.
+      res.json({ message: genericMessage });
+      return;
+    }
+
+    const customer = await prisma.customer.findUnique({ where: { email } });
+
+    if (customer && !customer.isGuest && customer.password) {
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      await prisma.customer.update({
+        where: { id: customer.id },
+        data: { passwordResetToken: token, passwordResetExpiresAt: expiresAt },
+      });
+
+      const resetUrl = `${config.frontendUrl}/reset-password?token=${token}`;
+
+      try {
+        await sendEmail({
+          to: customer.email,
+          subject: 'Reset Your Doc Rolds Password',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #fff; padding: 30px;">
+              <h1 style="color: #E83628; text-align: center;">Reset Your Password</h1>
+              <p style="color: #ccc; font-size: 14px; line-height: 1.6;">
+                We received a request to reset your Doc Rolds password. Click the button below to choose a new one - this link expires in 1 hour.
+              </p>
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${resetUrl}" style="background: #E83628; color: #fff; padding: 15px 40px; text-decoration: none; border-radius: 5px; font-size: 16px; display: inline-block;">
+                  Reset Password
+                </a>
+              </div>
+              <p style="color: #999; font-size: 12px;">
+                If you didn't request this, you can safely ignore this email - your password won't change.
+              </p>
+              <hr style="border: none; border-top: 1px solid #333; margin: 30px 0;">
+              <p style="color: #999; font-size: 12px; text-align: center;">
+                Doc Rolds Music - <a href="${config.frontendUrl}" style="color: #E83628;">docrolds.com</a>
+              </p>
+            </div>
+          `,
+        });
+      } catch (error) {
+        console.error('[EMAIL] Failed to send password reset email:', (error as Error).message);
+        captureError(error, { email: customer.email, context: 'password-reset-email' });
+      }
+    }
+
+    res.json({ message: genericMessage });
+  })
+);
+
+interface ResetPasswordRequest {
+  token: string;
+  newPassword: string;
+}
+
+/**
+ * POST /api/customers/reset-password
+ * Completes a self-service password reset given a valid, unexpired token.
+ */
+router.post(
+  '/reset-password',
+  authLimiter,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { token, newPassword } = req.body as ResetPasswordRequest;
+
+    if (!token || !newPassword) {
+      throw new BadRequestError('Token and new password are required');
+    }
+
+    if (newPassword.length < 6) {
+      throw new BadRequestError('Password must be at least 6 characters');
+    }
+
+    const customer = await prisma.customer.findUnique({ where: { passwordResetToken: token } });
+
+    if (
+      !customer ||
+      !customer.passwordResetExpiresAt ||
+      customer.passwordResetExpiresAt < new Date()
+    ) {
+      throw new BadRequestError('This reset link is invalid or has expired');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await prisma.customer.update({
+      where: { id: customer.id },
+      data: {
+        password: hashedPassword,
+        passwordResetToken: null,
+        passwordResetExpiresAt: null,
+      },
+    });
+
+    console.log('[CUSTOMERS] Password reset completed for:', customer.email);
+
+    res.json({ message: 'Password reset successfully' });
   })
 );
 

@@ -2,7 +2,7 @@ import { useState, useEffect, JSX, MouseEvent, KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { API_URL } from '../config';
 import { useAudioPlayer, Beat as AudioBeat } from '../context/AudioPlayerContext';
-import { useCart, LicenseTier } from '../context/CartContext';
+import { useCart, LicenseTier, LicensePricing, getLicenseTiersForBeat } from '../context/CartContext';
 import { useToast } from '../context/NotificationContext';
 import { useScrollAnimation } from '../hooks/useScrollAnimation';
 
@@ -19,6 +19,7 @@ interface Beat extends AudioBeat {
   producer?: string;
   soldExclusively?: boolean;
   audioFile: string | null;
+  licensePricing?: LicensePricing;
   [key: string]: unknown; // Index signature for cart compatibility
 }
 
@@ -319,7 +320,7 @@ function Beats(): JSX.Element {
             </div>
 
             <div className="license-options">
-              {licenseTiers.map((license: LicenseTier) => (
+              {getLicenseTiersForBeat(selectedBeatForLicense, licenseTiers).map((license: LicenseTier) => (
                 <div
                   key={license.id}
                   className={`license-option ${license.id === 'unlimited' ? 'popular' : ''}`}

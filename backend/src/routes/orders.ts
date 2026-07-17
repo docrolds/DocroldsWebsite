@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import { config } from '../config/env';
 import { sendEmail } from '../services/email';
 import { captureError } from '../services/sentry';
+import { getLicensePricing, DEFAULT_STANDARD_PRICE, UNLIMITED_MULTIPLIER } from '../services/pricing';
 import { paymentLimiter, authenticateToken, requireAdmin } from '../middleware';
 import {
   asyncHandler,
@@ -202,6 +203,7 @@ async function handleSuccessfulPayment(
   // Send download email
   if (updatedOrder) {
     await sendDownloadEmail(updatedOrder as OrderWithRelations);
+    await sendAdminSaleNotificationEmail(updatedOrder as OrderWithRelations);
   }
 
   // Create notification for customer
@@ -329,6 +331,81 @@ async function sendDownloadEmail(order: OrderWithRelations): Promise<void> {
   }
 }
 
+/**
+ * Notifies the admin of a new beat sale, mirroring the equivalent alert
+ * bookings already send on creation (bookings.ts sendAdminNotificationEmail).
+ */
+async function sendAdminSaleNotificationEmail(order: OrderWithRelations): Promise<void> {
+  const adminEmail = config.email.user; // Send to the same email that sends
+
+  const itemsList = order.items
+    .map(
+      (item) => `
+        <tr>
+          <td style="padding: 8px 0; color: #999;">${escapeHtml(item.beat.title)}</td>
+          <td style="padding: 8px 0;">${escapeHtml(item.licenseName)}</td>
+          <td style="padding: 8px 0;">$${item.price.toFixed(2)}</td>
+        </tr>
+      `
+    )
+    .join('');
+
+  const mailOptions = {
+    to: adminEmail,
+    subject: `💰 New Sale! #${order.orderNumber} - $${order.total.toFixed(2)}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #1a1a1a; color: #fff; padding: 30px;">
+        <h1 style="color: #10b981; text-align: center;">New Sale!</h1>
+
+        <div style="background: #222; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <h3 style="color: #E83628; margin-top: 0;">Customer</h3>
+          <table style="width: 100%; color: #fff;">
+            <tr>
+              <td style="padding: 8px 0; color: #999;">Email:</td>
+              <td style="padding: 8px 0;"><a href="mailto:${order.customer.email}" style="color: #E83628;">${order.customer.email}</a></td>
+            </tr>
+            ${order.customer.firstName ? `
+            <tr>
+              <td style="padding: 8px 0; color: #999;">Name:</td>
+              <td style="padding: 8px 0;">${escapeHtml(order.customer.firstName)}</td>
+            </tr>
+            ` : ''}
+          </table>
+        </div>
+
+        <div style="background: #222; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <h3 style="color: #E83628; margin-top: 0;">Order #${order.orderNumber}</h3>
+          <table style="width: 100%; color: #fff;">
+            ${itemsList}
+            <tr>
+              <td style="padding: 8px 0; color: #999; border-top: 1px solid #333;">Total:</td>
+              <td style="padding: 8px 0; border-top: 1px solid #333;"></td>
+              <td style="padding: 8px 0; border-top: 1px solid #333; color: #10b981;"><strong>$${order.total.toFixed(2)}</strong></td>
+            </tr>
+          </table>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid #333; margin: 30px 0;">
+
+        <p style="color: #999; font-size: 12px; text-align: center;">
+          Doc Rolds Music - <a href="${config.frontendUrl}" style="color: #E83628;">docrolds.com</a>
+        </p>
+      </div>
+    `,
+  };
+
+  try {
+    await sendEmail(mailOptions);
+    console.log('[EMAIL] Admin sale notification sent for order:', order.orderNumber);
+  } catch (error) {
+    console.error(
+      '[EMAIL] Failed to send admin sale notification:',
+      (error as Error).message
+    );
+    captureError(error, { orderNumber: order.orderNumber, context: 'admin-sale-email' });
+  }
+}
+
 // ===========================================
 // LICENSE TIER CONFIGURATION
 // ===========================================
@@ -340,8 +417,8 @@ interface LicenseTierConfig {
 }
 
 const LICENSE_TIERS: LicenseTierConfig[] = [
-  { type: 'STANDARD', name: 'Standard Lease', price: 50 },
-  { type: 'UNLIMITED', name: 'Unlimited Lease', price: 150 },
+  { type: 'STANDARD', name: 'Standard Lease', price: DEFAULT_STANDARD_PRICE },
+  { type: 'UNLIMITED', name: 'Unlimited Lease', price: DEFAULT_STANDARD_PRICE * UNLIMITED_MULTIPLIER },
 ];
 
 function getLicenseTier(
@@ -541,18 +618,23 @@ router.post(
       const beat = beats.find((b) => b.id === item.beatId);
       if (!beat) continue;
 
-      // Get license tier
+      // Get license tier (name comes from the fixed tier config; price is
+      // computed per-beat so a custom beat.price is actually charged)
       const licenseTier = getLicenseTier(item.licenseType);
       if (!licenseTier) {
         throw new BadRequestError(`Invalid license type: ${item.licenseType}`);
       }
 
-      subtotal += licenseTier.price;
+      const pricing = getLicensePricing(beat);
+      const price =
+        item.licenseType === 'STANDARD' ? pricing.standard : pricing.unlimited;
+
+      subtotal += price;
       orderItems.push({
         beatId: beat.id,
         licenseType: item.licenseType,
         licenseName: licenseTier.name,
-        price: licenseTier.price,
+        price,
       });
     }
 
@@ -890,7 +972,10 @@ router.post(
     const orderId = req.params.id as string;
     const { reason } = req.body as RefundOrderRequest;
 
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { customer: true },
+    });
 
     if (!order) {
       throw new NotFoundError('Order not found');
@@ -939,6 +1024,43 @@ router.post(
         `[REFUND] Order ${order.orderNumber} refunded by admin, Square refund ID:`,
         refundResponse.refund?.id
       );
+
+      try {
+        await sendEmail({
+          to: order.customer.email,
+          subject: `Refund Processed - Order #${order.orderNumber}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #1a1a1a; color: #fff; padding: 30px;">
+              <h1 style="color: #E83628; text-align: center;">Refund Processed</h1>
+              <p>Hey ${escapeHtml(order.customer.firstName || 'there')},</p>
+              <p>Your refund for order <strong>#${order.orderNumber}</strong> has been processed.</p>
+              <div style="background: #222; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                <table style="width: 100%; color: #fff;">
+                  <tr>
+                    <td style="padding: 8px 0; color: #999;">Order #:</td>
+                    <td style="padding: 8px 0;"><strong>${order.orderNumber}</strong></td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #999;">Amount Refunded:</td>
+                    <td style="padding: 8px 0;"><strong>$${order.total.toFixed(2)}</strong></td>
+                  </tr>
+                </table>
+              </div>
+              <p style="color: #999; font-size: 13px;">Funds typically appear back on your original payment method within 5-10 business days, depending on your bank.</p>
+              <p style="color: #999; font-size: 12px; margin-top: 30px; text-align: center;">
+                Questions? Reply to this email or reach out at <a href="${config.frontendUrl}/contact" style="color: #E83628;">docrolds.com/contact</a>
+              </p>
+              <hr style="border: none; border-top: 1px solid #333; margin: 30px 0;">
+              <p style="color: #999; font-size: 12px; text-align: center;">
+                Doc Rolds Music - <a href="${config.frontendUrl}" style="color: #E83628;">docrolds.com</a>
+              </p>
+            </div>
+          `,
+        });
+      } catch (emailError) {
+        console.error('[REFUND] Failed to send refund confirmation email:', (emailError as Error).message);
+        captureError(emailError, { orderNumber: order.orderNumber, context: 'order-refund-email' });
+      }
 
       res.json({
         success: true,

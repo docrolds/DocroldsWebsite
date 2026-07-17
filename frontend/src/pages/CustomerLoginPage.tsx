@@ -101,7 +101,10 @@ export default function CustomerLoginPage(): JSX.Element {
             </div>
 
             <div className="form-field">
-              <label htmlFor="password">Password</label>
+              <div className="form-field-header">
+                <label htmlFor="password">Password</label>
+                <Link to="/forgot-password" className="forgot-password-link">Forgot password?</Link>
+              </div>
               <div className="input-with-icon">
                 <i className="fas fa-lock"></i>
                 <input

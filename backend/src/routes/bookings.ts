@@ -796,6 +796,133 @@ async function sendBookingConfirmationEmail(booking: BookingForEmail): Promise<v
   }
 }
 
+async function sendBookingReminderEmail(booking: BookingForEmail): Promise<void> {
+  const scheduledDate = booking.scheduledAt
+    ? formatDate(booking.scheduledAt, "EEEE, MMMM d, yyyy 'at' h:mm a")
+    : 'To be scheduled';
+
+  const mailOptions = {
+    to: booking.email,
+    subject: `Reminder: Your session is tomorrow - #${booking.bookingNumber}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #1a1a1a; color: #fff; padding: 30px;">
+        <h1 style="color: #E83628; text-align: center;">See you soon!</h1>
+
+        <p>Hey ${escapeHtml(booking.name)},</p>
+        <p>Just a reminder that your session at Doc Rolds Studio is coming up:</p>
+
+        <div style="background: #222; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <table style="width: 100%; color: #fff;">
+            <tr>
+              <td style="padding: 8px 0; color: #999;">Booking #:</td>
+              <td style="padding: 8px 0;"><strong>${booking.bookingNumber}</strong></td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #999;">Date & Time:</td>
+              <td style="padding: 8px 0;"><strong>${scheduledDate}</strong></td>
+            </tr>
+            ${booking.balanceAmount > 0 ? `
+            <tr>
+              <td style="padding: 8px 0; color: #999;">Balance Due:</td>
+              <td style="padding: 8px 0;">$${booking.balanceAmount.toFixed(2)} (at studio)</td>
+            </tr>
+            ` : ''}
+          </table>
+        </div>
+
+        ${(booking.category === 'RECORDING' || (booking.category === 'MIXING' && booking.mixingDelivery === 'in-person')) ? `
+        <div style="background: #E83628; color: #fff; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: center;">
+          <a href="https://www.google.com/maps/dir/?api=1&destination=11100+66th+St+N+Suite+20,+Largo,+FL+33773"
+             target="_blank"
+             style="color: #fff; text-decoration: none;">
+            <strong>Summit Audio Recording Studio</strong><br>
+            <span style="font-size: 12px; text-decoration: underline;">11100 66th St N Suite 20, Largo, FL 33773</span><br>
+            <span style="font-size: 11px; opacity: 0.8;">📍 Tap for directions</span>
+          </a>
+        </div>
+        ` : ''}
+
+        <div style="text-align: center; margin: 25px 0;">
+          <p style="color: #999; font-size: 12px; margin-bottom: 10px;">Can't make it?</p>
+          <a href="${config.frontendUrl}/reschedule/${booking.bookingNumber}?key=${booking.rescheduleToken}"
+             style="display: inline-block; background: #333; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px;">
+            Reschedule Booking
+          </a>
+        </div>
+
+        <p style="color: #999; font-size: 12px; margin-top: 30px; text-align: center;">
+          Questions? Call us at <a href="tel:+17272825449" style="color: #fff; font-weight: bold;">(727) 282-5449</a>
+        </p>
+
+        <hr style="border: none; border-top: 1px solid #333; margin: 30px 0;">
+
+        <p style="color: #999; font-size: 12px; text-align: center;">
+          Doc Rolds Music - <a href="${config.frontendUrl}" style="color: #E83628;">docrolds.com</a>
+        </p>
+      </div>
+    `,
+  };
+
+  await sendEmail(mailOptions);
+}
+
+/**
+ * Sends session reminders for bookings scheduled roughly 24 hours out.
+ * Called both by an in-process interval (index.ts) and by the manual
+ * admin-triggered endpoint below, so it must be safe to call repeatedly -
+ * the reminderSent flag makes each booking eligible exactly once.
+ */
+export async function sendPendingBookingReminders(): Promise<{ sent: number; failed: number }> {
+  const windowStart = new Date(Date.now() + 23 * 60 * 60 * 1000);
+  const windowEnd = new Date(Date.now() + 25 * 60 * 60 * 1000);
+
+  const bookings = await prisma.booking.findMany({
+    where: {
+      status: { in: ['PENDING', 'CONFIRMED'] },
+      reminderSent: false,
+      scheduledAt: { gte: windowStart, lte: windowEnd },
+    },
+  });
+
+  let sent = 0;
+  let failed = 0;
+
+  for (const booking of bookings) {
+    try {
+      await sendBookingReminderEmail(booking);
+      await prisma.booking.update({
+        where: { id: booking.id },
+        data: { reminderSent: true, reminderSentAt: new Date() },
+      });
+      sent++;
+      console.log('[BOOKINGS] Reminder sent:', booking.bookingNumber);
+    } catch (error) {
+      failed++;
+      console.error('[BOOKINGS] Failed to send reminder:', booking.bookingNumber, (error as Error).message);
+      captureError(error, { bookingNumber: booking.bookingNumber, context: 'booking-reminder-email' });
+    }
+  }
+
+  return { sent, failed };
+}
+
+/**
+ * POST /api/bookings/send-reminders
+ * Manually trigger the reminder sweep (admin only). Also called on a
+ * recurring interval from index.ts - this endpoint exists so reminders
+ * can still go out via an external pinger if the web service has been
+ * idle and the in-process interval hasn't been running.
+ */
+router.post(
+  '/send-reminders',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
+    const result = await sendPendingBookingReminders();
+    res.json({ success: true, ...result });
+  })
+);
+
 // ===========================================
 // ADMIN ENDPOINTS
 // ===========================================
@@ -968,6 +1095,44 @@ router.post(
         `[REFUND] Booking ${booking.bookingNumber} deposit refunded by admin, Square refund ID:`,
         refundResponse.refund?.id
       );
+
+      try {
+        await sendEmail({
+          to: booking.email,
+          subject: `Deposit Refunded - Booking #${booking.bookingNumber}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #1a1a1a; color: #fff; padding: 30px;">
+              <h1 style="color: #E83628; text-align: center;">Deposit Refunded</h1>
+              <p>Hey ${escapeHtml(booking.name)},</p>
+              <p>Your deposit for booking <strong>#${booking.bookingNumber}</strong> has been refunded, and the booking has been cancelled.</p>
+              <div style="background: #222; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                <table style="width: 100%; color: #fff;">
+                  <tr>
+                    <td style="padding: 8px 0; color: #999;">Booking #:</td>
+                    <td style="padding: 8px 0;"><strong>${booking.bookingNumber}</strong></td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #999;">Amount Refunded:</td>
+                    <td style="padding: 8px 0;"><strong>$${booking.depositAmount.toFixed(2)}</strong></td>
+                  </tr>
+                </table>
+              </div>
+              <p style="color: #999; font-size: 13px;">Funds typically appear back on your original payment method within 5-10 business days, depending on your bank.</p>
+              <p>Want to book another session? Head back to <a href="${config.frontendUrl}/book" style="color: #E83628;">docrolds.com/book</a> anytime.</p>
+              <p style="color: #999; font-size: 12px; margin-top: 30px; text-align: center;">
+                Questions? Call us at <a href="tel:+17272825449" style="color: #fff; font-weight: bold;">(727) 282-5449</a>
+              </p>
+              <hr style="border: none; border-top: 1px solid #333; margin: 30px 0;">
+              <p style="color: #999; font-size: 12px; text-align: center;">
+                Doc Rolds Music - <a href="${config.frontendUrl}" style="color: #E83628;">docrolds.com</a>
+              </p>
+            </div>
+          `,
+        });
+      } catch (emailError) {
+        console.error('[REFUND] Failed to send refund confirmation email:', (emailError as Error).message);
+        captureError(emailError, { bookingNumber: booking.bookingNumber, context: 'booking-refund-email' });
+      }
 
       res.json({
         success: true,
