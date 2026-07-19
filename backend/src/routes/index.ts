@@ -9,3 +9,4 @@ export { default as adminRouter } from './admin';
 export { default as ordersRouter } from './orders';
 export { default as beatsRouter } from './beats';
 export { default as bookingsRouter } from './bookings';
+export { default as stemsRouter } from './stems';

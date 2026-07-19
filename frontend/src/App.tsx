@@ -33,6 +33,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import AdminLoginPage from './pages/AdminLoginPage';
 import BookPage from './pages/BookPage';
 import ReschedulePage from './pages/ReschedulePage';
+import StemsUploadPage from './pages/StemsUploadPage';
 import { Link } from 'react-router-dom';
 
 function NotFoundPage() {
@@ -140,6 +141,7 @@ function App() {
                 <Route path="/terms" element={<TermsOfServicePage />} />
                 <Route path="/book" element={<BookPage />} />
                 <Route path="/reschedule/:bookingNumber" element={<ReschedulePage />} />
+                <Route path="/booking/:bookingNumber/stems" element={<StemsUploadPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </main>

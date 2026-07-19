@@ -31,7 +31,7 @@ const prisma = new PrismaClient();
  * Timing-safe comparison for access tokens (e.g. Booking.rescheduleToken),
  * used to gate lookups keyed by a guessable/sequential public ID.
  */
-const isValidToken = (provided: string, expected: string): boolean => {
+export const isValidToken = (provided: string, expected: string): boolean => {
   const a = Buffer.from(provided);
   const b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -319,6 +319,17 @@ const MIXING_TIERS: MixingTierConfig[] = [
   { id: 'PREMIUM', price: 300, allowInPerson: true },
 ];
 
+interface MasteringTierConfig {
+  id: string;
+  price: number;
+}
+
+// Mastering is remote-only (no in-person delivery option, unlike Mixing).
+const MASTERING_TIERS: MasteringTierConfig[] = [
+  { id: 'DIGITAL', price: 75 },
+  { id: 'ANALOG', price: 125 },
+];
+
 const CONSULTING_PRICES: Record<string, number> = {
   '30min': 50,
   '60min': 85,
@@ -349,6 +360,9 @@ router.get(
         inPersonStudioHours: IN_PERSON_MIXING_STUDIO_HOURS,
         inPersonHourlyRate: IN_PERSON_MIXING_HOURLY_RATE,
       },
+      mastering: {
+        tiers: Object.fromEntries(MASTERING_TIERS.map((t) => [t.id, t.price])),
+      },
       consulting: CONSULTING_PRICES,
     });
   })
@@ -359,6 +373,7 @@ interface BookingPricingInput {
   hours?: number;
   mixingTier?: string;
   mixingDelivery?: string;
+  masteringTier?: string;
   consultingDuration?: string;
   promoId?: string;
 }
@@ -381,7 +396,7 @@ interface BookingPricingResult {
 async function calculateBookingPrice(
   input: BookingPricingInput
 ): Promise<BookingPricingResult | null> {
-  const { category, hours, mixingTier, mixingDelivery, consultingDuration, promoId } = input;
+  const { category, hours, mixingTier, mixingDelivery, masteringTier, consultingDuration, promoId } = input;
 
   if (category === 'recording') {
     if (!hours || hours < 1) return null;
@@ -400,6 +415,12 @@ async function calculateBookingPrice(
       return { deposit: DEFAULT_DEPOSIT, total };
     }
 
+    return { deposit: tier.price, total: tier.price };
+  }
+
+  if (category === 'mastering') {
+    const tier = MASTERING_TIERS.find((t) => t.id === masteringTier);
+    if (!tier) return null;
     return { deposit: tier.price, total: tier.price };
   }
 
@@ -424,10 +445,11 @@ async function calculateBookingPrice(
 // ===========================================
 
 interface BookingCreateRequest {
-  category: 'recording' | 'mixing' | 'promo' | 'consulting';
+  category: 'recording' | 'mixing' | 'mastering' | 'promo' | 'consulting';
   hours?: number;
   mixingTier?: string;
   mixingDelivery?: string;
+  masteringTier?: string;
   consultingDuration?: string;
   promoId?: string;
   beatId?: string;
@@ -456,6 +478,7 @@ router.post(
       hours,
       mixingTier,
       mixingDelivery,
+      masteringTier,
       consultingDuration,
       promoId,
       beatId,
@@ -480,6 +503,7 @@ router.post(
       hours,
       mixingTier,
       mixingDelivery,
+      masteringTier,
       consultingDuration,
       promoId,
     });
@@ -565,7 +589,11 @@ router.post(
           recordingDetails: customer.recordingDetails,
           category: category.toUpperCase(),
           hours: hours || null,
-          mixingTier: mixingTier || null,
+          // mixingTier also stores the mastering tier (DIGITAL/ANALOG) for
+          // MASTERING bookings - a booking is only ever one category, so
+          // reusing this column avoids a schema migration for a second,
+          // mutually-exclusive tier field.
+          mixingTier: mixingTier || masteringTier || null,
           mixingDelivery: mixingDelivery || null,
           promoId: promoId || null,
           beatId: beatId || null,
@@ -643,6 +671,8 @@ async function sendBookingConfirmationEmail(booking: BookingForEmail): Promise<v
     serviceDetails = `${booking.hours || 1} Hour Recording Session`;
   } else if (booking.category === 'MIXING') {
     serviceDetails = `${booking.mixingTier || 'Standard'} Mixing Service`;
+  } else if (booking.category === 'MASTERING') {
+    serviceDetails = `${booking.mixingTier || 'Digital'} Mastering Service`;
   } else if (booking.category === 'PROMO') {
     serviceDetails = 'Promo Package';
   } else if (booking.category === 'CONSULTING') {
@@ -708,7 +738,7 @@ async function sendBookingConfirmationEmail(booking: BookingForEmail): Promise<v
               </td>
             </tr>
             ` : ''}
-            ${(booking.category === 'MIXING' && booking.mixingDelivery === 'remote') ? `
+            ${((booking.category === 'MIXING' && booking.mixingDelivery === 'remote') || booking.category === 'MASTERING') ? `
             <tr>
               <td style="padding: 8px 0; color: rgba(255,255,255,0.8);">Delivery:</td>
               <td style="padding: 8px 0;"><strong>Remote</strong><br><span style="font-size: 12px;">Files will be delivered via email</span></td>
@@ -826,6 +856,16 @@ async function sendBookingReminderEmail(booking: BookingForEmail): Promise<void>
             <strong>Summit Audio Recording Studio</strong><br>
             <span style="font-size: 12px; text-decoration: underline;">11100 66th St N Suite 20, Largo, FL 33773</span><br>
             <span style="font-size: 11px; opacity: 0.8;">📍 Tap for directions</span>
+          </a>
+        </div>
+        ` : ''}
+
+        ${(booking.category === 'MIXING' || booking.category === 'MASTERING') ? `
+        <div style="text-align: center; margin: 25px 0;">
+          <p style="color: #999; font-size: 12px; margin-bottom: 10px;">Ready to send us your tracks?</p>
+          <a href="${config.frontendUrl}/booking/${booking.bookingNumber}/stems?key=${booking.rescheduleToken}"
+             style="display: inline-block; background: #E83628; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px;">
+            Upload Your Stems
           </a>
         </div>
         ` : ''}
@@ -1386,6 +1426,8 @@ async function sendAdminNotificationEmail(booking: BookingForEmail): Promise<voi
     serviceDetails = `${booking.hours || 1} Hour Recording Session`;
   } else if (booking.category === 'MIXING') {
     serviceDetails = `${booking.mixingTier || 'Standard'} Mixing Service`;
+  } else if (booking.category === 'MASTERING') {
+    serviceDetails = `${booking.mixingTier || 'Digital'} Mastering Service`;
   } else if (booking.category === 'PROMO') {
     serviceDetails = 'Promo Package';
   } else if (booking.category === 'CONSULTING') {

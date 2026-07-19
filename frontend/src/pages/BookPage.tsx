@@ -11,9 +11,10 @@ import 'react-day-picker/dist/style.css';
 // Type Definitions
 // ============================================
 
-type ServiceCategory = 'recording' | 'mixing' | 'promo' | 'consulting';
+type ServiceCategory = 'recording' | 'mixing' | 'mastering' | 'promo' | 'consulting';
 type MixingDelivery = 'remote' | 'in-person';
 type MixingTierId = 'BASIC' | 'STANDARD' | 'PRO' | 'PREMIUM';
+type MasteringTierId = 'DIGITAL' | 'ANALOG';
 type ConsultingDuration = '30min' | '60min';
 
 interface ConsultingOption {
@@ -42,6 +43,15 @@ interface MixingTier {
   features: string[];
   turnaround: string;
   allowInPerson: boolean;
+}
+
+interface MasteringTier {
+  id: MasteringTierId;
+  name: string;
+  price: number;
+  description: string;
+  features: string[];
+  turnaround: string;
 }
 
 interface Promo {
@@ -137,6 +147,25 @@ const DEFAULT_MIXING_TIERS: MixingTier[] = [
   }
 ];
 
+const DEFAULT_MASTERING_TIERS: MasteringTier[] = [
+  {
+    id: 'DIGITAL',
+    name: 'Digital Master',
+    price: 75,
+    description: 'iZotope, Brainworx (BX plugins), UAD & Console Virtual Print',
+    features: ['iZotope Ozone Chain', 'Brainworx (BX) Plugins', 'UAD Processing', 'Console Virtual Print', 'MP3 & WAV Delivery'],
+    turnaround: '2-3 days',
+  },
+  {
+    id: 'ANALOG',
+    name: 'Analog Master',
+    price: 125,
+    description: 'Rupert Neve Orbit, SSL G-Comp bus compressor & SSL Fusion, plus digital plugins',
+    features: ['Rupert Neve Orbit Summing', 'SSL G-Comp Bus Compressor', 'SSL Fusion Analog Processing', 'Complementary Digital Plugins', 'MP3 & WAV Delivery'],
+    turnaround: '3-5 days',
+  },
+];
+
 const DEFAULT_CONSULTING_OPTIONS: ConsultingOption[] = [
   {
     id: '30min',
@@ -169,6 +198,9 @@ interface PricingConfig {
     inPersonStudioHours: number;
     inPersonHourlyRate: number;
   };
+  mastering: {
+    tiers: Record<string, number>;
+  };
   consulting: Record<string, number>;
 }
 
@@ -179,6 +211,9 @@ const DEFAULT_PRICING_CONFIG: PricingConfig = {
     tiers: { BASIC: 75, STANDARD: 100, PRO: 200, PREMIUM: 300 },
     inPersonStudioHours: 2,
     inPersonHourlyRate: 80,
+  },
+  mastering: {
+    tiers: { DIGITAL: 75, ANALOG: 125 },
   },
   consulting: { '30min': 50, '60min': 85 },
 };
@@ -200,6 +235,7 @@ export default function BookPage(): ReactNode {
   const [hours, setHours] = useState<number>(1);
   const [mixingTier, setMixingTier] = useState<MixingTierId | null>(null);
   const [mixingDelivery, setMixingDelivery] = useState<MixingDelivery | null>(null);
+  const [masteringTier, setMasteringTier] = useState<MasteringTierId | null>(null);
   const [promos, setPromos] = useState<Promo[]>([]);
   const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
   const [consultingDuration, setConsultingDuration] = useState<ConsultingDuration | null>(null);
@@ -210,6 +246,10 @@ export default function BookPage(): ReactNode {
   const mixingTiers = DEFAULT_MIXING_TIERS.map(tier => ({
     ...tier,
     price: pricingConfig.mixing.tiers[tier.id] ?? tier.price,
+  }));
+  const masteringTiers = DEFAULT_MASTERING_TIERS.map(tier => ({
+    ...tier,
+    price: pricingConfig.mastering.tiers[tier.id] ?? tier.price,
   }));
   const consultingOptions = DEFAULT_CONSULTING_OPTIONS.map(option => ({
     ...option,
@@ -476,6 +516,12 @@ export default function BookPage(): ReactNode {
       return { deposit: tier.price, balance: 0, total: tier.price, rate: 0 };
     }
 
+    if (category === 'mastering') {
+      const tier = masteringTiers.find(t => t.id === masteringTier);
+      if (!tier) return { deposit: 0, balance: 0, total: 0, rate: 0 };
+      return { deposit: tier.price, balance: 0, total: tier.price, rate: 0 };
+    }
+
     if (category === 'promo' && selectedPromo) {
       return { deposit, balance: selectedPromo.price - deposit, total: selectedPromo.price, rate: 0 };
     }
@@ -523,6 +569,11 @@ export default function BookPage(): ReactNode {
     } else {
       setStep('schedule');
     }
+  };
+
+  const handleMasteringTierSelect = (tierId: MasteringTierId) => {
+    setMasteringTier(tierId);
+    setStep('schedule');
   };
 
   const handlePromoSelect = (promo: Promo) => {
@@ -652,6 +703,7 @@ export default function BookPage(): ReactNode {
         hours: category === 'recording' ? hours : undefined,
         mixingTier: category === 'mixing' ? mixingTier : undefined,
         mixingDelivery: category === 'mixing' ? mixingDelivery : undefined,
+        masteringTier: category === 'mastering' ? masteringTier : undefined,
         consultingDuration: category === 'consulting' ? consultingDuration : undefined,
         promoId: selectedPromo?.id,
         beatId: selectedBeat?.id,
@@ -728,6 +780,9 @@ export default function BookPage(): ReactNode {
           } else {
             setStep('service');
           }
+        } else if (category === 'mastering') {
+          setStep('service');
+          setMasteringTier(null);
         } else if (category === 'promo') {
           if (selectedPromo?.includesBeat) {
             setStep('beats');
@@ -779,6 +834,15 @@ export default function BookPage(): ReactNode {
           </div>
           <h3>Mixing Services</h3>
           <p>Professional mixing & mastering</p>
+          <span className="bp-price-hint">From $75</span>
+        </div>
+
+        <div className="bp-category-card" onClick={() => selectCategory('mastering')}>
+          <div className="bp-category-icon">
+            <i className="fas fa-compact-disc"></i>
+          </div>
+          <h3>Mastering</h3>
+          <p>Digital or analog mastering, remote delivery</p>
           <span className="bp-price-hint">From $75</span>
         </div>
 
@@ -930,6 +994,47 @@ export default function BookPage(): ReactNode {
               </div>
             </div>
           )}
+        </div>
+      );
+    }
+
+    if (category === 'mastering') {
+      return (
+        <div className="bp-service-step">
+          <button className="bp-back-link" onClick={goBack}>
+            <i className="fas fa-arrow-left"></i> Back
+          </button>
+
+          <div className="bp-step-header">
+            <h2>Choose Mastering Package</h2>
+            <p>Remote delivery - files sent via email</p>
+          </div>
+
+          <div className="bp-mixing-list">
+            {masteringTiers.map(tier => (
+              <div
+                key={tier.id}
+                className={`bp-mixing-row ${masteringTier === tier.id ? 'selected' : ''}`}
+                onClick={() => handleMasteringTierSelect(tier.id)}
+              >
+                <div className="bp-mixing-row-header">
+                  <div className="bp-mixing-row-title">
+                    <h4>{tier.name}</h4>
+                    <span className="bp-mixing-desc">{tier.description}</span>
+                  </div>
+                  <div className="bp-mixing-row-price">
+                    <span className="bp-price">${tier.price}</span>
+                    <span className="bp-turnaround">{tier.turnaround}</span>
+                  </div>
+                </div>
+                <ul className="bp-mixing-features">
+                  {tier.features.map((feature, idx) => (
+                    <li key={idx}><i className="fas fa-check"></i> {feature}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
       );
     }
@@ -1383,6 +1488,13 @@ export default function BookPage(): ReactNode {
                 </>
               )}
 
+              {category === 'mastering' && (
+                <div className="bp-summary-row">
+                  <span>Service</span>
+                  <span>{masteringTiers.find(t => t.id === masteringTier)?.name}</span>
+                </div>
+              )}
+
               {category === 'promo' && selectedPromo && (
                 <>
                   <div className="bp-summary-row">
@@ -1473,7 +1585,7 @@ export default function BookPage(): ReactNode {
                   </div>
                 </div>
               )}
-              {category === 'mixing' && mixingDelivery === 'remote' && (
+              {((category === 'mixing' && mixingDelivery === 'remote') || category === 'mastering') && (
                 <div className="bp-studio-detail">
                   <i className="fas fa-cloud"></i>
                   <div>
@@ -1557,6 +1669,12 @@ export default function BookPage(): ReactNode {
           <div className="bp-conf-row">
             <span>Service</span>
             <span>{mixingTiers.find(t => t.id === mixingTier)?.name}</span>
+          </div>
+        )}
+        {category === 'mastering' && (
+          <div className="bp-conf-row">
+            <span>Service</span>
+            <span>{masteringTiers.find(t => t.id === masteringTier)?.name}</span>
           </div>
         )}
         {category === 'consulting' && (

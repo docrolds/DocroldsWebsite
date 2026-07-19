@@ -150,6 +150,21 @@ interface Promo {
   savingsPercent?: number;
 }
 
+/** Stem submission (customer stems upload, admin view) */
+interface StemSubmissionFile {
+  filename: string;
+  url: string;
+}
+
+interface StemSubmissionAdmin {
+  id: string;
+  songName: string;
+  artistName: string;
+  notes: string | null;
+  createdAt: string;
+  files: StemSubmissionFile[];
+}
+
 /** Reported comment (comment moderation) */
 interface ReportedComment {
   id: string;
@@ -233,6 +248,10 @@ export default function AdminDashboard(): JSX.Element | null {
   const [promos, setPromos] = useState<Promo[]>([]);
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
   const [reportedComments, setReportedComments] = useState<ReportedComment[]>([]);
+  const [showStemsModal, setShowStemsModal] = useState<boolean>(false);
+  const [stemsBookingLabel, setStemsBookingLabel] = useState<string>('');
+  const [stemSubmissions, setStemSubmissions] = useState<StemSubmissionAdmin[]>([]);
+  const [stemsLoading, setStemsLoading] = useState<boolean>(false);
 
   // Promo form state
   const [showPromoModal, setShowPromoModal] = useState<boolean>(false);
@@ -749,6 +768,25 @@ export default function AdminDashboard(): JSX.Element | null {
       fetchAllData();
     } catch (err) {
       alert('Failed to delete promo');
+    }
+  };
+
+  const viewStemSubmissions = async (booking: Booking): Promise<void> => {
+    setStemsBookingLabel(`#${booking.bookingNumber} - ${booking.name}`);
+    setShowStemsModal(true);
+    setStemsLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/bookings/${booking.id}/stems`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to load stem submissions');
+      const data = await res.json();
+      setStemSubmissions(Array.isArray(data) ? data : []);
+    } catch (err) {
+      alert('Failed to load stem submissions');
+      setStemSubmissions([]);
+    } finally {
+      setStemsLoading(false);
     }
   };
 
@@ -1528,6 +1566,15 @@ export default function AdminDashboard(): JSX.Element | null {
                                   <i className="fas fa-undo"></i>
                                 </button>
                               )}
+                              {(booking.category === 'MIXING' || booking.category === 'MASTERING') && (
+                                <button
+                                  className="icon-btn"
+                                  onClick={() => viewStemSubmissions(booking)}
+                                  title="View Stem Submissions"
+                                >
+                                  <i className="fas fa-file-audio"></i>
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1820,6 +1867,62 @@ export default function AdminDashboard(): JSX.Element | null {
                   <button className="btn-primary" onClick={savePromo}>
                     {editingPromo ? 'Save Changes' : 'Create Promo'}
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showStemsModal && (
+            <div className="modal-overlay" onClick={() => setShowStemsModal(false)}>
+              <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>Stem Submissions - {stemsBookingLabel}</h2>
+                  <button className="modal-close" onClick={() => setShowStemsModal(false)}>
+                    <i className="fas fa-times"></i>
+                  </button>
+                </div>
+                <div className="modal-body">
+                  {stemsLoading ? (
+                    <div className="section-loading"><div className="admin-spinner"></div></div>
+                  ) : stemSubmissions.length === 0 ? (
+                    <div className="card-empty">
+                      <i className="fas fa-file-audio"></i>
+                      <p>No stems submitted yet</p>
+                    </div>
+                  ) : (
+                    stemSubmissions.map((submission) => (
+                      <div key={submission.id} className="admin-card" style={{ marginBottom: '1rem' }}>
+                        <div className="admin-card-content">
+                          <div style={{ fontWeight: 500 }}>{submission.songName} - {submission.artistName}</div>
+                          <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                            Submitted {new Date(submission.createdAt).toLocaleString()}
+                          </div>
+                          {submission.notes && (
+                            <div style={{ fontSize: '0.9rem', marginBottom: '8px' }}>
+                              <strong>Notes:</strong> {submission.notes}
+                            </div>
+                          )}
+                          <div>
+                            {submission.files.map((file, idx) => (
+                              <a
+                                key={idx}
+                                href={file.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn-secondary"
+                                style={{ display: 'inline-block', marginRight: '8px', marginBottom: '8px', fontSize: '0.85rem' }}
+                              >
+                                <i className="fas fa-download"></i> {file.filename}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="modal-footer">
+                  <button className="btn-secondary" onClick={() => setShowStemsModal(false)}>Close</button>
                 </div>
               </div>
             </div>

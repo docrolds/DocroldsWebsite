@@ -43,6 +43,13 @@ interface BrevoConfig {
   fromName: string;
 }
 
+interface R2Config {
+  accountId: string | undefined;
+  accessKeyId: string | undefined;
+  secretAccessKey: string | undefined;
+  bucketName: string | undefined;
+}
+
 interface Config {
   port: number;
   nodeEnv: 'development' | 'production' | 'staging' | 'test';
@@ -52,6 +59,7 @@ interface Config {
   email: EmailConfig;
   sendgrid: SendGridConfig;
   brevo: BrevoConfig;
+  r2: R2Config;
   frontendUrl: string;
   downloadLinkExpiryDays: number;
   sentryDsn: string | undefined;
@@ -186,6 +194,13 @@ function buildConfig(): Config {
       fromName: optionalEnv('BREVO_FROM_NAME', 'Doc Rolds'),
     },
 
+    r2: {
+      accountId: process.env.R2_ACCOUNT_ID,
+      accessKeyId: process.env.R2_ACCESS_KEY_ID,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+      bucketName: process.env.R2_BUCKET_NAME,
+    },
+
     frontendUrl: optionalEnv('FRONTEND_URL', 'http://localhost:5173'),
     downloadLinkExpiryDays: optionalIntEnv('DOWNLOAD_LINK_EXPIRY_DAYS', 7),
     sentryDsn: process.env.SENTRY_DSN,
@@ -209,6 +224,10 @@ function warnInsecureDefaults(config: Config): void {
 
     if (!config.sentryDsn) {
       warnings.push('SENTRY_DSN is not set (uncaught exceptions and payment/email failures will only be visible in logs)');
+    }
+
+    if (!config.r2.accountId || !config.r2.accessKeyId || !config.r2.secretAccessKey || !config.r2.bucketName) {
+      warnings.push('R2 storage is not fully configured (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME) - stems uploads will fail');
     }
 
     if (warnings.length > 0) {
@@ -239,4 +258,4 @@ export const { database, auth, square, email, sendgrid, brevo } = config;
 export const sentryDsn = config.sentryDsn;
 
 // Export type for use in other modules
-export type { Config, DatabaseConfig, AuthConfig, SquareConfig, EmailConfig, SendGridConfig, BrevoConfig };
+export type { Config, DatabaseConfig, AuthConfig, SquareConfig, EmailConfig, SendGridConfig, BrevoConfig, R2Config };

@@ -20,6 +20,7 @@ import { config } from '../config/env';
 import { sendEmail } from '../services/email';
 import { captureError } from '../services/sentry';
 import { escapeHtml } from '../utils/text';
+import { getPresignedDownloadUrl } from '../services/storage';
 import type {
   PhotoUploadRequest,
   TeamMemberRequest,
@@ -906,6 +907,46 @@ router.delete(
 
     await prisma.promo.delete({ where: { id } });
     res.json({ success: true });
+  })
+);
+
+// ===========================================
+// STEM SUBMISSIONS (Mixing/Mastering bookings)
+// ===========================================
+
+/**
+ * GET /api/admin/bookings/:id/stems
+ * List stem submissions for a booking with short-lived presigned R2
+ * download URLs per file (admin only; bucket is private).
+ */
+router.get(
+  '/admin/bookings/:id/stems',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const bookingId = req.params.id as string;
+    const submissions = await prisma.stemSubmission.findMany({
+      where: { bookingId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const formatted = await Promise.all(
+      submissions.map(async (s) => ({
+        id: s.id,
+        songName: s.songName,
+        artistName: s.artistName,
+        notes: s.notes,
+        createdAt: s.createdAt,
+        files: await Promise.all(
+          s.files.map(async (fileKey) => ({
+            filename: fileKey.split('/').pop() || fileKey,
+            url: await getPresignedDownloadUrl(fileKey),
+          }))
+        ),
+      }))
+    );
+
+    res.json(formatted);
   })
 );
 

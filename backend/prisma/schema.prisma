@@ -288,13 +288,15 @@ model Booking {
   recordingDetails String?
 
   // Service Category (NEW)
-  category        String    @default("RECORDING")  // RECORDING, MIXING, PROMO
+  category        String    @default("RECORDING")  // RECORDING, MIXING, MASTERING, PROMO, CONSULTING
 
   // Recording-specific
   hours           Int?      // 1-10 hours
 
-  // Mixing-specific
-  mixingTier      String?   // BASIC, STANDARD, PRO, PREMIUM
+  // Mixing-specific (also reused for MASTERING bookings to store the
+  // mastering tier - DIGITAL, ANALOG - since a booking is only ever one
+  // category)
+  mixingTier      String?   // BASIC, STANDARD, PRO, PREMIUM (mixing) or DIGITAL, ANALOG (mastering)
   mixingDelivery  String?   // remote, in-person
   uploadedFiles   String[]  // URLs for remote mixing file uploads
 
@@ -343,10 +345,27 @@ model Booking {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  stemSubmissions StemSubmission[]
+
   @@index([email])
   @@index([scheduledAt])
   @@index([status])
   @@index([squareBookingId])
   @@index([category])
   @@index([promoId])
+}
+
+model StemSubmission {
+  id         String   @id @default(cuid())
+  bookingId  String
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  songName   String
+  artistName String
+  notes      String?  // reference-track / mix-notes free text
+  files      String[] // R2 object keys, not local paths or public URLs
+
+  createdAt  DateTime @default(now())
+
+  @@index([bookingId])
 }

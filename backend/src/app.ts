@@ -16,7 +16,8 @@ import {
   beatsRouter,
   ordersRouter,
   adminRouter,
-  bookingsRouter
+  bookingsRouter,
+  stemsRouter
 } from './routes';
 
 // Create Express app
@@ -100,6 +101,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/customers', customersRouter);
 app.use('/api/beats', beatsRouter);
 app.use('/api/bookings', bookingsRouter); // Booking availability, promos, create
+app.use('/api/stems', stemsRouter); // Customer stems upload (Mixing/Mastering bookings)
 app.use('/api', ordersRouter); // Orders, checkout, downloads, webhooks
 app.use('/api', adminRouter);  // Team, content, photos, admin metrics
 
