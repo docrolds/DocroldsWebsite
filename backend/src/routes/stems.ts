@@ -39,7 +39,11 @@ const uploadStems = multer({
     if (allowedAudio.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type'));
+      // A plain Error here falls through the error handler's generic
+      // 500 branch (it only special-cases actual MulterError instances) -
+      // throwing our own AppError subclass instead gets it classified and
+      // returned as a proper 400.
+      cb(new BadRequestError(`Invalid file type: ${file.mimetype}`));
     }
   },
 });
