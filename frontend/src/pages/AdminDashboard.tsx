@@ -150,6 +150,17 @@ interface Promo {
   savingsPercent?: number;
 }
 
+/** Reported comment (comment moderation) */
+interface ReportedComment {
+  id: string;
+  content: string;
+  createdAt: string;
+  reportedAt: string | null;
+  author: { id: string; firstName: string; lastName: string; stageName?: string | null; email: string } | null;
+  beat: { id: string; title: string } | null;
+  reportedBy: { id: string; firstName: string; lastName: string; email: string } | null;
+}
+
 /** Metrics data interface */
 interface MetricsData {
   totalOrders: number;
@@ -221,6 +232,7 @@ export default function AdminDashboard(): JSX.Element | null {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [promos, setPromos] = useState<Promo[]>([]);
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
+  const [reportedComments, setReportedComments] = useState<ReportedComment[]>([]);
 
   // Promo form state
   const [showPromoModal, setShowPromoModal] = useState<boolean>(false);
@@ -286,14 +298,15 @@ export default function AdminDashboard(): JSX.Element | null {
     try {
       const headers: HeadersInit = { 'Authorization': `Bearer ${token}` };
 
-      const [beatsRes, teamRes, usersRes, customersRes, ordersRes, bookingsRes, promosRes] = await Promise.all([
+      const [beatsRes, teamRes, usersRes, customersRes, ordersRes, bookingsRes, promosRes, reportedCommentsRes] = await Promise.all([
         fetch(`${API_URL}/beats`, { headers }),
         fetch(`${API_URL}/photos?category=team`, { headers }),
         fetch(`${API_URL}/auth/users`, { headers }),
         fetch(`${API_URL}/customers/admin/list`, { headers }),
         fetch(`${API_URL}/admin/orders`, { headers }),
         fetch(`${API_URL}/admin/bookings`, { headers }),
-        fetch(`${API_URL}/admin/promos`, { headers })
+        fetch(`${API_URL}/admin/promos`, { headers }),
+        fetch(`${API_URL}/admin/comments/reported`, { headers })
       ]);
 
       const beatsData = await beatsRes.json();
@@ -303,6 +316,7 @@ export default function AdminDashboard(): JSX.Element | null {
       const ordersData = await ordersRes.json();
       const bookingsData = bookingsRes.ok ? await bookingsRes.json() : [];
       const promosData = promosRes.ok ? await promosRes.json() : [];
+      const reportedCommentsData = reportedCommentsRes.ok ? await reportedCommentsRes.json() : [];
 
       setBeats(Array.isArray(beatsData) ? beatsData : []);
       setTeam(Array.isArray(teamData) ? teamData : []);
@@ -311,6 +325,7 @@ export default function AdminDashboard(): JSX.Element | null {
       setOrders(Array.isArray(ordersData) ? ordersData : []);
       setBookings(Array.isArray(bookingsData) ? bookingsData : []);
       setPromos(Array.isArray(promosData) ? promosData : []);
+      setReportedComments(Array.isArray(reportedCommentsData) ? reportedCommentsData : []);
 
       // Calculate stats
       const ordersList: Order[] = Array.isArray(ordersData) ? ordersData : [];
@@ -563,6 +578,7 @@ export default function AdminDashboard(): JSX.Element | null {
     { id: 'orders', label: 'Orders', icon: 'fa-shopping-cart' },
     { id: 'bookings', label: 'Bookings', icon: 'fa-calendar-check' },
     { id: 'promos', label: 'Promos', icon: 'fa-tags' },
+    { id: 'comments', label: 'Reported Comments', icon: 'fa-flag' },
     { id: 'metrics', label: 'Metrics', icon: 'fa-chart-line' },
     { id: 'settings', label: 'Settings', icon: 'fa-cog' },
   ];
@@ -733,6 +749,33 @@ export default function AdminDashboard(): JSX.Element | null {
       fetchAllData();
     } catch (err) {
       alert('Failed to delete promo');
+    }
+  };
+
+  const dismissReport = async (commentId: string): Promise<void> => {
+    try {
+      const res = await fetch(`${API_URL}/admin/comments/${commentId}/dismiss`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to dismiss report');
+      setReportedComments((prev) => prev.filter((c) => c.id !== commentId));
+    } catch (err) {
+      alert('Failed to dismiss report');
+    }
+  };
+
+  const deleteReportedComment = async (commentId: string): Promise<void> => {
+    if (!confirm('Are you sure you want to permanently delete this comment?')) return;
+    try {
+      const res = await fetch(`${API_URL}/admin/comments/${commentId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to delete comment');
+      setReportedComments((prev) => prev.filter((c) => c.id !== commentId));
+    } catch (err) {
+      alert('Failed to delete comment');
     }
   };
 
@@ -1779,6 +1822,80 @@ export default function AdminDashboard(): JSX.Element | null {
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Reported Comments Section */}
+          {activeSection === 'comments' && (
+            <div className="admin-section">
+              <div className="section-header">
+                <h2>Reported Comments</h2>
+              </div>
+
+              {loading ? (
+                <div className="section-loading"><div className="admin-spinner"></div></div>
+              ) : reportedComments.length === 0 ? (
+                <div className="admin-card">
+                  <div className="admin-card-content">
+                    <div className="card-empty">
+                      <i className="fas fa-flag"></i>
+                      <p>No reported comments</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="admin-table-container">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Comment</th>
+                        <th>Author</th>
+                        <th>Beat</th>
+                        <th>Reported By</th>
+                        <th>Reported At</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportedComments.map((comment: ReportedComment) => (
+                        <tr key={comment.id}>
+                          <td style={{ maxWidth: '320px', whiteSpace: 'normal' }}>{comment.content}</td>
+                          <td>
+                            {comment.author
+                              ? (comment.author.stageName || `${comment.author.firstName} ${comment.author.lastName}`)
+                              : 'Unknown'}
+                          </td>
+                          <td>{comment.beat?.title || 'Unknown'}</td>
+                          <td>
+                            {comment.reportedBy
+                              ? `${comment.reportedBy.firstName} ${comment.reportedBy.lastName}`
+                              : 'Unknown'}
+                          </td>
+                          <td>{comment.reportedAt ? new Date(comment.reportedAt).toLocaleString() : '-'}</td>
+                          <td>
+                            <div className="action-btns">
+                              <button
+                                className="icon-btn"
+                                onClick={() => dismissReport(comment.id)}
+                                title="Dismiss Report"
+                              >
+                                <i className="fas fa-check"></i>
+                              </button>
+                              <button
+                                className="icon-btn danger"
+                                onClick={() => deleteReportedComment(comment.id)}
+                                title="Delete Comment"
+                              >
+                                <i className="fas fa-trash"></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 

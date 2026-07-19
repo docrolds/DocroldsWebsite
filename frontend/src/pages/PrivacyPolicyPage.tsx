@@ -60,22 +60,27 @@ export default function PrivacyPolicyPage(): JSX.Element {
             </div>
 
             <div className="legal-clause">
-              <h4>7. Your Rights</h4>
+              <h4>7. Data Security</h4>
+              <p>We implement reasonable administrative, technical, and physical safeguards designed to protect your information. However, no method of transmission over the internet or electronic storage is completely secure, and we cannot guarantee absolute security.</p>
+            </div>
+
+            <div className="legal-clause">
+              <h4>8. Your Rights</h4>
               <p>You can review and update your account information from your dashboard at any time. To request deletion of your account or personal data, or to ask any question about how your information is used, contact us using the details below.</p>
             </div>
 
             <div className="legal-clause">
-              <h4>8. Children's Privacy</h4>
+              <h4>9. Children's Privacy</h4>
               <p>Our services are not directed to individuals under 13, and we do not knowingly collect personal information from children under 13.</p>
             </div>
 
             <div className="legal-clause">
-              <h4>9. Changes to This Policy</h4>
+              <h4>10. Changes to This Policy</h4>
               <p>We may update this policy from time to time. Material changes will be reflected by an updated "last updated" date above.</p>
             </div>
 
             <div className="legal-clause">
-              <h4>10. Contact Us</h4>
+              <h4>11. Contact Us</h4>
               <p>Questions about this policy? <Link to="/contact">Contact us</Link> or reach out at <a href="mailto:info@docrolds.com" style={{ color: '#E83628' }}>info@docrolds.com</a>.</p>
             </div>
           </div>

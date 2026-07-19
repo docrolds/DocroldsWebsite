@@ -909,4 +909,95 @@ router.delete(
   })
 );
 
+// ===========================================
+// REPORTED COMMENTS MODERATION
+// ===========================================
+
+/**
+ * GET /api/admin/comments/reported
+ * List all comments flagged as reported (admin only)
+ */
+router.get(
+  '/admin/comments/reported',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
+    const reported = await prisma.comment.findMany({
+      where: { isReported: true },
+      include: {
+        customer: { select: { id: true, firstName: true, lastName: true, stageName: true, email: true } },
+        beat: { select: { id: true, title: true } },
+      },
+      orderBy: { reportedAt: 'desc' },
+    });
+
+    const reporterIds = reported
+      .map((c) => c.reportedBy)
+      .filter((id): id is string => Boolean(id));
+    const reporters = reporterIds.length
+      ? await prisma.customer.findMany({
+          where: { id: { in: reporterIds } },
+          select: { id: true, firstName: true, lastName: true, email: true },
+        })
+      : [];
+    const reporterMap = new Map(reporters.map((r) => [r.id, r]));
+
+    const formatted = reported.map((c) => ({
+      id: c.id,
+      content: c.content,
+      createdAt: c.createdAt,
+      reportedAt: c.reportedAt,
+      author: c.customer,
+      beat: c.beat,
+      reportedBy: c.reportedBy ? reporterMap.get(c.reportedBy) ?? null : null,
+    }));
+
+    res.json(formatted);
+  })
+);
+
+/**
+ * POST /api/admin/comments/:id/dismiss
+ * Clear the report flag on a comment without deleting it (admin only)
+ */
+router.post(
+  '/admin/comments/:id/dismiss',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
+    const comment = await prisma.comment.findUnique({ where: { id } });
+    if (!comment) {
+      throw new NotFoundError('Comment not found');
+    }
+
+    await prisma.comment.update({
+      where: { id },
+      data: { isReported: false, reportedAt: null, reportedBy: null },
+    });
+
+    res.json({ message: 'Report dismissed' });
+  })
+);
+
+/**
+ * DELETE /api/admin/comments/:id
+ * Permanently delete a comment (admin only; cascades to replies/likes)
+ */
+router.delete(
+  '/admin/comments/:id',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
+    const comment = await prisma.comment.findUnique({ where: { id } });
+    if (!comment) {
+      throw new NotFoundError('Comment not found');
+    }
+
+    await prisma.comment.delete({ where: { id } });
+    res.json({ message: 'Comment deleted' });
+  })
+);
+
 export default router;
