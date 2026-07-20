@@ -15,12 +15,13 @@ import {
   authenticateToken,
   requireAdmin,
 } from '../middleware';
-import { asyncHandler, BadRequestError, NotFoundError } from '../middleware';
+import { asyncHandler, BadRequestError, NotFoundError, ConflictError } from '../middleware';
 import { config } from '../config/env';
 import { sendEmail } from '../services/email';
 import { captureError } from '../services/sentry';
 import { escapeHtml } from '../utils/text';
 import { getPresignedDownloadUrl } from '../services/storage';
+import { getStripeClient, isStripeConfigured } from '../services/stripe';
 import type {
   PhotoUploadRequest,
   TeamMemberRequest,
@@ -907,6 +908,230 @@ router.delete(
 
     await prisma.promo.delete({ where: { id } });
     res.json({ success: true });
+  })
+);
+
+// ===========================================
+// COLLABORATOR PAYOUTS (Stripe Connect)
+// ===========================================
+
+interface CreateCollaboratorRequest {
+  name?: string;
+  email?: string;
+  isBusinessAccount?: boolean;
+}
+
+interface SetBeatCollaboratorsRequest {
+  collaborators?: Array<{ collaboratorId: string; splitPercentage: number }>;
+}
+
+/**
+ * Generates a fresh Stripe Connect onboarding link for a collaborator and
+ * emails it to them. Shared by both the initial invite and the
+ * resend-onboarding route.
+ */
+async function sendCollaboratorOnboardingEmail(collaborator: { name: string; email: string; stripeAccountId: string | null }): Promise<void> {
+  if (!collaborator.stripeAccountId) return;
+  const stripe = getStripeClient();
+  const accountLink = await stripe.accountLinks.create({
+    account: collaborator.stripeAccountId,
+    refresh_url: `${config.frontendUrl}/`,
+    return_url: `${config.frontendUrl}/`,
+    type: 'account_onboarding',
+  });
+
+  await sendEmail({
+    to: collaborator.email,
+    subject: `You've been added as a Doc Rolds collaborator`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #1a1a1a; color: #fff; padding: 30px;">
+        <h1 style="color: #E83628; text-align: center;">Set Up Your Payout Account</h1>
+        <p>Hey ${escapeHtml(collaborator.name)},</p>
+        <p>You've been added as a collaborator on Doc Rolds. To receive your share of future beat sales automatically, complete your Stripe payout setup:</p>
+        <div style="text-align: center; margin: 25px 0;">
+          <a href="${accountLink.url}" style="display: inline-block; background: #E83628; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px;">
+            Complete Payout Setup
+          </a>
+        </div>
+        <p style="color: #999; font-size: 12px;">This link expires shortly - if it stops working, ask us to resend it.</p>
+      </div>
+    `,
+  });
+}
+
+/**
+ * GET /api/admin/collaborators
+ * List all collaborators (admin only).
+ */
+router.get(
+  '/admin/collaborators',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
+    const collaborators = await prisma.collaborator.findMany({ orderBy: { createdAt: 'desc' } });
+    res.json(collaborators);
+  })
+);
+
+/**
+ * POST /api/admin/collaborators
+ * Create a collaborator, create their Stripe Connect Express account, and
+ * email them an onboarding link (admin only).
+ */
+router.post(
+  '/admin/collaborators',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { name, email, isBusinessAccount } = req.body as CreateCollaboratorRequest;
+    if (!name?.trim() || !email?.trim()) {
+      throw new BadRequestError('Name and email are required');
+    }
+
+    const existing = await prisma.collaborator.findUnique({ where: { email: email.trim() } });
+    if (existing) {
+      throw new ConflictError('A collaborator with this email already exists');
+    }
+
+    // The business's own row never gets a Stripe Connect account - no
+    // transfer is ever created for it, its share simply stays in the
+    // platform balance (see orders.ts's payout logic), so there's nothing
+    // to onboard.
+    if (isBusinessAccount) {
+      const existingBusiness = await prisma.collaborator.findFirst({ where: { isBusinessAccount: true } });
+      if (existingBusiness) {
+        throw new ConflictError('A business-account collaborator already exists');
+      }
+      const collaborator = await prisma.collaborator.create({
+        data: {
+          name: name.trim(),
+          email: email.trim(),
+          isBusinessAccount: true,
+          onboardingStatus: 'COMPLETE',
+        },
+      });
+      res.status(201).json(collaborator);
+      return;
+    }
+
+    if (!isStripeConfigured()) {
+      throw new BadRequestError('Stripe is not configured - cannot create collaborator payout accounts');
+    }
+
+    const stripe = getStripeClient();
+    const account = await stripe.accounts.create({
+      type: 'express',
+      email: email.trim(),
+      capabilities: { transfers: { requested: true } },
+    });
+
+    const collaborator = await prisma.collaborator.create({
+      data: {
+        name: name.trim(),
+        email: email.trim(),
+        stripeAccountId: account.id,
+        onboardingStatus: 'PENDING',
+      },
+    });
+
+    sendCollaboratorOnboardingEmail(collaborator).catch((err) => {
+      console.error('[ADMIN] Failed to send collaborator onboarding email:', err);
+      captureError(err, { context: 'sendCollaboratorOnboardingEmail', collaboratorId: collaborator.id });
+    });
+
+    res.status(201).json(collaborator);
+  })
+);
+
+/**
+ * POST /api/admin/collaborators/:id/resend-onboarding
+ * Regenerates and re-sends the Stripe Connect onboarding link (admin only).
+ */
+router.post(
+  '/admin/collaborators/:id/resend-onboarding',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    if (!isStripeConfigured()) {
+      throw new BadRequestError('Stripe is not configured');
+    }
+
+    const id = req.params.id as string;
+    const collaborator = await prisma.collaborator.findUnique({ where: { id } });
+    if (!collaborator) {
+      throw new NotFoundError('Collaborator not found');
+    }
+    if (!collaborator.stripeAccountId) {
+      throw new BadRequestError('Collaborator has no Stripe account to onboard');
+    }
+
+    await sendCollaboratorOnboardingEmail(collaborator);
+    res.json({ message: 'Onboarding link resent' });
+  })
+);
+
+/**
+ * PUT /api/admin/beats/:id/collaborators
+ * Replaces a beat's collaborator/split set. Splits must sum to exactly
+ * 100 across all rows (admin only). Transactional so a partial write can
+ * never leave the beat's splits summing to something other than 100.
+ */
+router.put(
+  '/admin/beats/:id/collaborators',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const beatId = req.params.id as string;
+    const { collaborators } = req.body as SetBeatCollaboratorsRequest;
+
+    if (!Array.isArray(collaborators) || collaborators.length === 0) {
+      throw new BadRequestError('At least one collaborator split is required');
+    }
+
+    const total = collaborators.reduce((sum, c) => sum + (Number(c.splitPercentage) || 0), 0);
+    if (Math.abs(total - 100) > 0.01) {
+      throw new BadRequestError(`Collaborator splits must sum to 100 (got ${total})`);
+    }
+
+    const beat = await prisma.beat.findUnique({ where: { id: beatId } });
+    if (!beat) {
+      throw new NotFoundError('Beat not found');
+    }
+
+    await prisma.$transaction([
+      prisma.beatCollaborator.deleteMany({ where: { beatId } }),
+      prisma.beatCollaborator.createMany({
+        data: collaborators.map((c) => ({
+          beatId,
+          collaboratorId: c.collaboratorId,
+          splitPercentage: Number(c.splitPercentage),
+        })),
+      }),
+    ]);
+
+    const updated = await prisma.beatCollaborator.findMany({
+      where: { beatId },
+      include: { collaborator: true },
+    });
+    res.json(updated);
+  })
+);
+
+/**
+ * GET /api/admin/beats/:id/collaborators
+ * Returns the current collaborator/split set for a beat (admin only).
+ */
+router.get(
+  '/admin/beats/:id/collaborators',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const beatId = req.params.id as string;
+    const collaborators = await prisma.beatCollaborator.findMany({
+      where: { beatId },
+      include: { collaborator: true },
+    });
+    res.json(collaborators);
   })
 );
 

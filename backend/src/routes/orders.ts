@@ -17,6 +17,7 @@ import { config } from '../config/env';
 import { sendEmail } from '../services/email';
 import { captureError } from '../services/sentry';
 import { getLicensePricing } from '../services/pricing';
+import { getStripeClient, isStripeConfigured } from '../services/stripe';
 import { isValidEmail, escapeHtml } from '../utils/text';
 import { paymentLimiter, authenticateToken, requireAdmin } from '../middleware';
 import {
@@ -509,6 +510,77 @@ router.post(
   })
 );
 
+/**
+ * POST /api/stripe/webhooks
+ * Handle Stripe webhook events (Connect account onboarding status,
+ * transfer outcomes, payment confirmations) for the collaborator-payout
+ * checkout path. Always acknowledges receipt even on internal processing
+ * failure, matching the Square webhook's convention above, so Stripe
+ * doesn't retry-storm on a bug on our side.
+ */
+router.post(
+  '/stripe/webhooks',
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    if (!isStripeConfigured() || !config.stripe.webhookSecret) {
+      res.status(503).json({ message: 'Stripe webhooks not configured' });
+      return;
+    }
+
+    const signature = req.header('stripe-signature');
+    const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+    const stripe = getStripeClient();
+
+    let event;
+    try {
+      if (!rawBody || !signature) throw new Error('Missing signature or body');
+      event = stripe.webhooks.constructEvent(rawBody, signature, config.stripe.webhookSecret);
+    } catch (err) {
+      console.warn('[STRIPE WEBHOOK] Rejected event with invalid signature');
+      throw new UnauthorizedError('Invalid signature');
+    }
+
+    console.log('[STRIPE WEBHOOK] Event received:', event.type);
+
+    try {
+      if (event.type === 'account.updated') {
+        const account = event.data.object as { id: string; charges_enabled?: boolean; details_submitted?: boolean };
+        const status = account.charges_enabled
+          ? 'COMPLETE'
+          : account.details_submitted
+            ? 'PENDING'
+            : 'PENDING';
+        await prisma.collaborator.updateMany({
+          where: { stripeAccountId: account.id },
+          data: { onboardingStatus: status },
+        });
+      } else if (event.type === 'transfer.created') {
+        const transfer = event.data.object as { id: string };
+        await prisma.orderItemTransfer.updateMany({
+          where: { stripeTransferId: transfer.id },
+          data: { status: 'COMPLETED' },
+        });
+      } else if (event.type === 'transfer.reversed') {
+        const transfer = event.data.object as { id: string };
+        await prisma.orderItemTransfer.updateMany({
+          where: { stripeTransferId: transfer.id },
+          data: { status: 'FAILED' },
+        });
+      }
+      // payment_intent.succeeded/.payment_failed are intentionally not
+      // handled here - /checkout/confirm-stripe-payment synchronously
+      // verifies and completes the order right after the client confirms
+      // payment, so this webhook would be redundant for that path. Left
+      // unhandled rather than duplicating completion logic with a second
+      // code path that could race the synchronous one.
+    } catch (error) {
+      console.error('[STRIPE WEBHOOK] Error processing event:', error);
+      captureError(error, { eventType: event.type, context: 'stripe-webhook' });
+    }
+
+    res.json({ received: true });
+  })
+);
+
 // ===========================================
 // CHECKOUT ENDPOINTS
 // ===========================================
@@ -727,6 +799,309 @@ router.post(
 
       throw new InternalError('Failed to process payment');
     }
+  })
+);
+
+// ===========================================
+// STRIPE CHECKOUT (multi-producer collaborator beats only)
+// ===========================================
+// Regular solo-beat checkout above stays on Square unchanged. A cart is
+// only routed through Stripe if at least one beat in it has collaborator
+// splits configured (see /checkout/payment-method below), since Square
+// cannot safely do marketplace-style split payouts. Note: Order's
+// `squarePaymentId` column is reused to hold the Stripe PaymentIntent id
+// for Stripe-processed orders (distinguishable by its "pi_" prefix) rather
+// than adding a second payment-id column for what is, from the DB's
+// perspective, the same "external payment reference" concept.
+
+/**
+ * Shared validation/pricing logic for building order items + resolving the
+ * customer record. Deliberately NOT shared with the Square route above -
+ * that path is the higher-volume, already-proven one and duplicating this
+ * ~30 lines here is a smaller risk than refactoring working code.
+ */
+async function resolveOrderItemsAndCustomer(
+  items: CartItem[],
+  customerData: { email: string; firstName?: string; lastName?: string; phone?: string; password?: string }
+): Promise<{
+  customer: { id: string; isGuest: boolean };
+  orderItems: Array<{ beatId: string; licenseType: string; licenseName: string; price: number }>;
+  subtotal: number;
+}> {
+  if (!customerData || !customerData.email) {
+    throw new BadRequestError('Customer email is required');
+  }
+  if (!isValidEmail(customerData.email)) {
+    throw new BadRequestError('Invalid email format');
+  }
+  if (!items || items.length === 0) {
+    throw new BadRequestError('Cart is empty');
+  }
+
+  let customer = await prisma.customer.findUnique({ where: { email: customerData.email } });
+  if (!customer) {
+    customer = await prisma.customer.create({
+      data: {
+        email: customerData.email,
+        firstName: customerData.firstName || null,
+        lastName: customerData.lastName || null,
+        phone: customerData.phone || null,
+        isGuest: !customerData.password,
+      },
+    });
+  }
+
+  const beatIds = items.map((item) => item.beatId);
+  const beats = await prisma.beat.findMany({ where: { id: { in: beatIds } } });
+  if (beats.length !== items.length) {
+    throw new BadRequestError('Some beats not found');
+  }
+
+  const orderItems: Array<{ beatId: string; licenseType: string; licenseName: string; price: number }> = [];
+  let subtotal = 0;
+
+  for (const item of items) {
+    const beat = beats.find((b) => b.id === item.beatId);
+    if (!beat) continue;
+
+    const licenseTier = getLicenseTier(item.licenseType);
+    if (!licenseTier) {
+      throw new BadRequestError(`Invalid license type: ${item.licenseType}`);
+    }
+
+    const pricing = getLicensePricing(beat);
+    const price = item.licenseType === 'STANDARD' ? pricing.standard : pricing.unlimited;
+
+    subtotal += price;
+    orderItems.push({ beatId: beat.id, licenseType: item.licenseType, licenseName: licenseTier.name, price });
+  }
+
+  return { customer, orderItems, subtotal };
+}
+
+/**
+ * Creates the OrderItemTransfer rows (and, where possible, the actual
+ * Stripe transfers) for a completed Stripe order. Never throws - a
+ * transfer failure must not undo an already-successful customer charge;
+ * failures are just recorded as FAILED for admin to retry.
+ */
+async function createCollaboratorTransfers(
+  orderId: string,
+  paymentIntentId: string
+): Promise<void> {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { items: true },
+  });
+  if (!order) return;
+
+  const stripe = getStripeClient();
+  let sourceCharge: string | undefined;
+  try {
+    const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    sourceCharge = typeof intent.latest_charge === 'string' ? intent.latest_charge : intent.latest_charge?.id;
+  } catch (err) {
+    console.error('[STRIPE] Failed to retrieve PaymentIntent for transfers:', err);
+    captureError(err, { context: 'createCollaboratorTransfers-retrieve', orderId });
+  }
+
+  for (const item of order.items) {
+    const splits = await prisma.beatCollaborator.findMany({
+      where: { beatId: item.beatId },
+      include: { collaborator: true },
+    });
+
+    for (const split of splits) {
+      if (split.collaborator.isBusinessAccount) continue; // stays in platform balance, no transfer needed
+
+      const amount = Math.round(item.price * (split.splitPercentage / 100) * 100) / 100;
+
+      if (!split.collaborator.stripeAccountId || split.collaborator.onboardingStatus !== 'COMPLETE' || !sourceCharge) {
+        await prisma.orderItemTransfer.create({
+          data: {
+            orderItemId: item.id,
+            collaboratorId: split.collaboratorId,
+            amount,
+            status: 'FAILED',
+          },
+        });
+        continue;
+      }
+
+      try {
+        const transfer = await stripe.transfers.create({
+          amount: Math.round(amount * 100),
+          currency: 'usd',
+          destination: split.collaborator.stripeAccountId,
+          source_transaction: sourceCharge,
+        });
+        await prisma.orderItemTransfer.create({
+          data: {
+            orderItemId: item.id,
+            collaboratorId: split.collaboratorId,
+            amount,
+            stripeTransferId: transfer.id,
+            status: 'COMPLETED',
+          },
+        });
+      } catch (err) {
+        console.error('[STRIPE] Transfer failed for collaborator', split.collaboratorId, err);
+        captureError(err, { context: 'createCollaboratorTransfers-transfer', orderId, collaboratorId: split.collaboratorId });
+        await prisma.orderItemTransfer.create({
+          data: {
+            orderItemId: item.id,
+            collaboratorId: split.collaboratorId,
+            amount,
+            status: 'FAILED',
+          },
+        });
+      }
+    }
+  }
+}
+
+/**
+ * GET /api/checkout/payment-method?beatIds=id1,id2,...
+ * Tells the frontend which processor a cart's contents require. A cart
+ * containing any beat with configured collaborator splits routes entirely
+ * through Stripe (no cross-processor splitting within one checkout);
+ * everything else stays on Square.
+ */
+router.get(
+  '/checkout/payment-method',
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const raw = typeof req.query.beatIds === 'string' ? req.query.beatIds : '';
+    const beatIds = raw.split(',').map((id) => id.trim()).filter(Boolean);
+
+    if (beatIds.length === 0) {
+      res.json({ processor: 'SQUARE' });
+      return;
+    }
+
+    const count = await prisma.beatCollaborator.count({ where: { beatId: { in: beatIds } } });
+    res.json({ processor: count > 0 ? 'STRIPE' : 'SQUARE' });
+  })
+);
+
+/**
+ * GET /api/checkout/stripe-config
+ * Publishable key for the frontend's Stripe.js init (not sensitive - it's
+ * designed to be public, unlike the secret key).
+ */
+router.get('/checkout/stripe-config', (_req: Request, res: Response): void => {
+  res.json({ publishableKey: config.stripe.publishableKey || null });
+});
+
+interface CreateStripeIntentRequest {
+  items: CartItem[];
+  customer: { email: string; firstName?: string; lastName?: string; phone?: string; password?: string };
+}
+
+/**
+ * POST /api/checkout/create-stripe-payment-intent
+ * Creates the pending Order (same validation/pricing as the Square path)
+ * plus a Stripe PaymentIntent for the subtotal, returning the client
+ * secret needed to mount Stripe Elements on the frontend.
+ */
+router.post(
+  '/checkout/create-stripe-payment-intent',
+  paymentLimiter,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    if (!isStripeConfigured()) {
+      throw new BadRequestError('Stripe is not configured');
+    }
+
+    const { items, customer: customerData } = req.body as CreateStripeIntentRequest;
+    const { customer, orderItems, subtotal } = await resolveOrderItemsAndCustomer(items, customerData);
+
+    const orderNumber = await generateOrderNumber();
+    const downloadExpiresAt = customer.isGuest
+      ? new Date(Date.now() + config.downloadLinkExpiryDays * 24 * 60 * 60 * 1000)
+      : null;
+
+    const order = await prisma.order.create({
+      data: {
+        orderNumber,
+        customerId: customer.id,
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
+        subtotal,
+        total: subtotal,
+        downloadExpiresAt,
+        items: { create: orderItems },
+      },
+    });
+
+    const stripe = getStripeClient();
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(subtotal * 100),
+      currency: 'usd',
+      metadata: { orderNumber: order.orderNumber, orderId: order.id },
+    });
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { squarePaymentId: paymentIntent.id },
+    });
+
+    res.json({ orderNumber: order.orderNumber, clientSecret: paymentIntent.client_secret });
+  })
+);
+
+interface ConfirmStripePaymentRequest {
+  orderNumber: string;
+}
+
+/**
+ * POST /api/checkout/confirm-stripe-payment
+ * Verifies the PaymentIntent's status directly with Stripe (never trusts
+ * a client-side "it succeeded" claim), completes the order the same way
+ * the Square path does, and creates collaborator transfers.
+ */
+router.post(
+  '/checkout/confirm-stripe-payment',
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    if (!isStripeConfigured()) {
+      throw new BadRequestError('Stripe is not configured');
+    }
+
+    const { orderNumber } = req.body as ConfirmStripePaymentRequest;
+    if (!orderNumber) {
+      throw new BadRequestError('Order number is required');
+    }
+
+    const order = await prisma.order.findUnique({ where: { orderNumber } });
+    if (!order || !order.squarePaymentId) {
+      throw new NotFoundError('Order not found');
+    }
+
+    if (order.paymentStatus === 'PAID') {
+      // Already confirmed (e.g. a retried client call) - idempotent no-op.
+      res.json({ success: true, orderNumber: order.orderNumber, redirectUrl: `/order/${orderNumber}?success=true&key=${order.confirmationToken}` });
+      return;
+    }
+
+    const stripe = getStripeClient();
+    const intent = await stripe.paymentIntents.retrieve(order.squarePaymentId);
+
+    if (intent.status !== 'succeeded') {
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: 'CANCELLED', paymentStatus: 'FAILED' },
+      });
+      res.status(400).json({ success: false, message: 'Payment was not completed', status: intent.status });
+      return;
+    }
+
+    await handleSuccessfulPayment(order, intent.id);
+    await createCollaboratorTransfers(order.id, intent.id);
+
+    res.json({
+      success: true,
+      orderNumber: order.orderNumber,
+      paymentId: intent.id,
+      redirectUrl: `/order/${orderNumber}?success=true&key=${order.confirmationToken}`,
+    });
   })
 );
 

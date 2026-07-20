@@ -165,6 +165,23 @@ interface StemSubmissionAdmin {
   files: StemSubmissionFile[];
 }
 
+/** Collaborator (Stripe Connect payout recipient) */
+interface Collaborator {
+  id: string;
+  name: string;
+  email: string;
+  stripeAccountId: string | null;
+  onboardingStatus: 'NOT_STARTED' | 'PENDING' | 'COMPLETE' | 'RESTRICTED';
+  isBusinessAccount: boolean;
+  createdAt: string;
+}
+
+interface BeatCollaboratorRow {
+  id?: string;
+  collaboratorId: string;
+  splitPercentage: number;
+}
+
 /** Reported comment (comment moderation) */
 interface ReportedComment {
   id: string;
@@ -252,6 +269,13 @@ export default function AdminDashboard(): JSX.Element | null {
   const [stemsBookingLabel, setStemsBookingLabel] = useState<string>('');
   const [stemSubmissions, setStemSubmissions] = useState<StemSubmissionAdmin[]>([]);
   const [stemsLoading, setStemsLoading] = useState<boolean>(false);
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+  const [showAddCollaboratorModal, setShowAddCollaboratorModal] = useState<boolean>(false);
+  const [collaboratorForm, setCollaboratorForm] = useState<{ name: string; email: string; isBusinessAccount: boolean }>({ name: '', email: '', isBusinessAccount: false });
+  const [showSplitsModal, setShowSplitsModal] = useState<boolean>(false);
+  const [splitsBeat, setSplitsBeat] = useState<Beat | null>(null);
+  const [splitsRows, setSplitsRows] = useState<BeatCollaboratorRow[]>([]);
+  const [splitsLoading, setSplitsLoading] = useState<boolean>(false);
 
   // Promo form state
   const [showPromoModal, setShowPromoModal] = useState<boolean>(false);
@@ -597,6 +621,7 @@ export default function AdminDashboard(): JSX.Element | null {
     { id: 'orders', label: 'Orders', icon: 'fa-shopping-cart' },
     { id: 'bookings', label: 'Bookings', icon: 'fa-calendar-check' },
     { id: 'promos', label: 'Promos', icon: 'fa-tags' },
+    { id: 'collaborators', label: 'Collaborators', icon: 'fa-handshake' },
     { id: 'comments', label: 'Reported Comments', icon: 'fa-flag' },
     { id: 'metrics', label: 'Metrics', icon: 'fa-chart-line' },
     { id: 'settings', label: 'Settings', icon: 'fa-cog' },
@@ -787,6 +812,115 @@ export default function AdminDashboard(): JSX.Element | null {
       setStemSubmissions([]);
     } finally {
       setStemsLoading(false);
+    }
+  };
+
+  const fetchCollaborators = async (): Promise<void> => {
+    try {
+      const res = await fetch(`${API_URL}/admin/collaborators`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to load collaborators');
+      const data = await res.json();
+      setCollaborators(Array.isArray(data) ? data : []);
+    } catch (err) {
+      alert('Failed to load collaborators');
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated && (activeSection === 'collaborators')) {
+      fetchCollaborators();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, activeSection]);
+
+  const createCollaborator = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${API_URL}/admin/collaborators`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(collaboratorForm),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to create collaborator');
+      setShowAddCollaboratorModal(false);
+      setCollaboratorForm({ name: '', email: '', isBusinessAccount: false });
+      fetchCollaborators();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to create collaborator');
+    }
+  };
+
+  const resendOnboarding = async (collaboratorId: string): Promise<void> => {
+    try {
+      const res = await fetch(`${API_URL}/admin/collaborators/${collaboratorId}/resend-onboarding`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to resend onboarding link');
+      alert('Onboarding link resent');
+    } catch (err) {
+      alert('Failed to resend onboarding link');
+    }
+  };
+
+  const openSplitsModal = async (beat: Beat): Promise<void> => {
+    setSplitsBeat(beat);
+    setShowSplitsModal(true);
+    setSplitsLoading(true);
+    try {
+      const [collabRes, splitsRes] = await Promise.all([
+        collaborators.length ? Promise.resolve(null) : fetch(`${API_URL}/admin/collaborators`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_URL}/admin/beats/${beat.id}/collaborators`, { headers: { 'Authorization': `Bearer ${token}` } }),
+      ]);
+      if (collabRes) {
+        const collabData = await collabRes.json();
+        setCollaborators(Array.isArray(collabData) ? collabData : []);
+      }
+      const splitsData = await splitsRes.json();
+      const rows: BeatCollaboratorRow[] = Array.isArray(splitsData)
+        ? splitsData.map((s: { id: string; collaboratorId: string; splitPercentage: number }) => ({
+            id: s.id,
+            collaboratorId: s.collaboratorId,
+            splitPercentage: s.splitPercentage,
+          }))
+        : [];
+      setSplitsRows(rows);
+    } catch (err) {
+      alert('Failed to load collaborator splits');
+      setSplitsRows([]);
+    } finally {
+      setSplitsLoading(false);
+    }
+  };
+
+  const splitsTotal = splitsRows.reduce((sum, r) => sum + (Number(r.splitPercentage) || 0), 0);
+
+  const saveSplits = async (): Promise<void> => {
+    if (!splitsBeat) return;
+    if (Math.abs(splitsTotal - 100) > 0.01) {
+      alert(`Splits must sum to 100 (currently ${splitsTotal})`);
+      return;
+    }
+    if (splitsRows.some((r) => !r.collaboratorId)) {
+      alert('Every row needs a collaborator selected');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_URL}/admin/beats/${splitsBeat.id}/collaborators`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collaborators: splitsRows.map((r) => ({ collaboratorId: r.collaboratorId, splitPercentage: Number(r.splitPercentage) })) }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Failed to save splits');
+      }
+      setShowSplitsModal(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to save splits');
     }
   };
 
@@ -1087,6 +1221,9 @@ export default function AdminDashboard(): JSX.Element | null {
                             <div className="action-btns">
                               <button className="icon-btn" onClick={() => openModal('beat', beat)} title="Edit">
                                 <i className="fas fa-edit"></i>
+                              </button>
+                              <button className="icon-btn" onClick={() => openSplitsModal(beat)} title="Manage Collaborators">
+                                <i className="fas fa-handshake"></i>
                               </button>
                               <button className="icon-btn danger" onClick={() => deleteBeat(beat.id)} title="Delete">
                                 <i className="fas fa-trash"></i>
@@ -1923,6 +2060,200 @@ export default function AdminDashboard(): JSX.Element | null {
                 </div>
                 <div className="modal-footer">
                   <button className="btn-secondary" onClick={() => setShowStemsModal(false)}>Close</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Collaborators Section */}
+          {activeSection === 'collaborators' && (
+            <div className="admin-section">
+              <div className="section-header">
+                <h2>Collaborators</h2>
+                <button className="admin-btn primary" onClick={() => setShowAddCollaboratorModal(true)}>
+                  <i className="fas fa-plus"></i> Add Collaborator
+                </button>
+              </div>
+
+              {collaborators.length === 0 ? (
+                <div className="admin-card">
+                  <div className="admin-card-content">
+                    <div className="card-empty">
+                      <i className="fas fa-handshake"></i>
+                      <p>No collaborators yet</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="admin-table-container">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Type</th>
+                        <th>Onboarding Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {collaborators.map((c) => (
+                        <tr key={c.id}>
+                          <td>{c.name}</td>
+                          <td>{c.email}</td>
+                          <td>{c.isBusinessAccount ? 'Business (Doc Rolds)' : 'Collaborator'}</td>
+                          <td>
+                            <span className={`status-badge ${c.onboardingStatus === 'COMPLETE' ? 'paid' : 'pending'}`}>
+                              {c.onboardingStatus}
+                            </span>
+                          </td>
+                          <td>
+                            {!c.isBusinessAccount && c.onboardingStatus !== 'COMPLETE' && (
+                              <button className="icon-btn" onClick={() => resendOnboarding(c.id)} title="Resend Onboarding Link">
+                                <i className="fas fa-paper-plane"></i>
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {showAddCollaboratorModal && (
+            <div className="modal-overlay" onClick={() => setShowAddCollaboratorModal(false)}>
+              <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>Add Collaborator</h2>
+                  <button className="modal-close" onClick={() => setShowAddCollaboratorModal(false)}>
+                    <i className="fas fa-times"></i>
+                  </button>
+                </div>
+                <form onSubmit={createCollaborator}>
+                  <div className="modal-body">
+                    <div className="form-group">
+                      <label>Name *</label>
+                      <input
+                        type="text"
+                        value={collaboratorForm.name}
+                        onChange={(e) => setCollaboratorForm({ ...collaboratorForm, name: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Email *</label>
+                      <input
+                        type="email"
+                        value={collaboratorForm.email}
+                        onChange={(e) => setCollaboratorForm({ ...collaboratorForm, email: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={collaboratorForm.isBusinessAccount}
+                          onChange={(e) => setCollaboratorForm({ ...collaboratorForm, isBusinessAccount: e.target.checked })}
+                        />
+                        {' '}This is the Doc Rolds business row (no Stripe onboarding, only one allowed)
+                      </label>
+                    </div>
+                  </div>
+                  <div className="modal-footer">
+                    <button type="button" className="btn-secondary" onClick={() => setShowAddCollaboratorModal(false)}>Cancel</button>
+                    <button type="submit" className="btn-primary">Create</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {showSplitsModal && splitsBeat && (
+            <div className="modal-overlay" onClick={() => setShowSplitsModal(false)}>
+              <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>Collaborator Splits - {splitsBeat.title}</h2>
+                  <button className="modal-close" onClick={() => setShowSplitsModal(false)}>
+                    <i className="fas fa-times"></i>
+                  </button>
+                </div>
+                <div className="modal-body">
+                  {splitsLoading ? (
+                    <div className="section-loading"><div className="admin-spinner"></div></div>
+                  ) : (
+                    <>
+                      {splitsRows.length === 0 && (
+                        <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                          No splits configured - this beat sells solo through Square. Add rows below to route it through Stripe with collaborator payouts.
+                        </p>
+                      )}
+                      {splitsRows.map((row, idx) => (
+                        <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                          <select
+                            value={row.collaboratorId}
+                            onChange={(e) => {
+                              const updated = [...splitsRows];
+                              updated[idx] = { ...updated[idx], collaboratorId: e.target.value };
+                              setSplitsRows(updated);
+                            }}
+                            className="admin-select"
+                            style={{ flex: 1 }}
+                          >
+                            <option value="">Select collaborator...</option>
+                            {collaborators.map((c) => (
+                              <option key={c.id} value={c.id}>{c.name}{c.isBusinessAccount ? ' (Doc Rolds)' : ''}</option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value={row.splitPercentage}
+                            onChange={(e) => {
+                              const updated = [...splitsRows];
+                              updated[idx] = { ...updated[idx], splitPercentage: Number(e.target.value) };
+                              setSplitsRows(updated);
+                            }}
+                            style={{ width: '90px' }}
+                          />
+                          <span>%</span>
+                          <button
+                            type="button"
+                            className="icon-btn danger"
+                            onClick={() => setSplitsRows(splitsRows.filter((_, i) => i !== idx))}
+                          >
+                            <i className="fas fa-trash"></i>
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => setSplitsRows([...splitsRows, { collaboratorId: '', splitPercentage: 0 }])}
+                        style={{ marginTop: '8px' }}
+                      >
+                        <i className="fas fa-plus"></i> Add Row
+                      </button>
+                      <p style={{ marginTop: '1rem', fontWeight: 600, color: Math.abs(splitsTotal - 100) > 0.01 && splitsRows.length > 0 ? '#e83628' : 'inherit' }}>
+                        Total: {splitsTotal}% {splitsRows.length > 0 && (Math.abs(splitsTotal - 100) > 0.01 ? '(must equal 100%)' : '✓')}
+                      </p>
+                    </>
+                  )}
+                </div>
+                <div className="modal-footer">
+                  <button className="btn-secondary" onClick={() => setShowSplitsModal(false)}>Cancel</button>
+                  <button
+                    className="btn-primary"
+                    onClick={saveSplits}
+                    disabled={splitsRows.length > 0 && Math.abs(splitsTotal - 100) > 0.01}
+                  >
+                    Save Splits
+                  </button>
                 </div>
               </div>
             </div>

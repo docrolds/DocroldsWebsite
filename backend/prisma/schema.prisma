@@ -41,6 +41,7 @@ model Beat {
   likes         BeatLike[]
   playlistBeats PlaylistBeat[]
   comments      Comment[]
+  beatCollaborators BeatCollaborator[]
 }
 
 // ==========================================
@@ -111,6 +112,53 @@ model OrderItem {
   licenseType String // STANDARD, UNLIMITED
   licenseName String // "Standard Lease", "Unlimited Lease"
   price       Float
+
+  transfers   OrderItemTransfer[]
+}
+
+// ==========================================
+// COLLABORATOR PAYOUTS (Stripe Connect)
+// ==========================================
+
+model Collaborator {
+  id                String   @id @default(cuid())
+  name              String
+  email             String   @unique
+  stripeAccountId   String?  @unique // null until Connect onboarding is started
+  onboardingStatus  String   @default("NOT_STARTED") // NOT_STARTED, PENDING, COMPLETE, RESTRICTED
+  isBusinessAccount Boolean  @default(false) // true for the single "Doc Rolds" row - no Stripe transfer is ever created for this row, its share simply stays in the platform balance
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  beatCollaborators BeatCollaborator[]
+  transfers         OrderItemTransfer[]
+}
+
+model BeatCollaborator {
+  id              String       @id @default(cuid())
+  beatId          String
+  beat            Beat         @relation(fields: [beatId], references: [id], onDelete: Cascade)
+  collaboratorId  String
+  collaborator    Collaborator @relation(fields: [collaboratorId], references: [id])
+  splitPercentage Float // all rows for a given beatId must sum to exactly 100, validated server-side
+
+  @@unique([beatId, collaboratorId])
+  @@index([beatId])
+}
+
+model OrderItemTransfer {
+  id               String       @id @default(cuid())
+  orderItemId      String
+  orderItem        OrderItem    @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  collaboratorId   String
+  collaborator     Collaborator @relation(fields: [collaboratorId], references: [id])
+  amount           Float
+  stripeTransferId String?
+  status           String       @default("PENDING") // PENDING, COMPLETED, FAILED
+  createdAt        DateTime     @default(now())
+
+  @@index([orderItemId])
+  @@index([status])
 }
 
 // ==========================================

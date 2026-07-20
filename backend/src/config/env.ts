@@ -50,6 +50,12 @@ interface R2Config {
   bucketName: string | undefined;
 }
 
+interface StripeConfig {
+  secretKey: string | undefined;
+  publishableKey: string | undefined;
+  webhookSecret: string | undefined;
+}
+
 interface Config {
   port: number;
   nodeEnv: 'development' | 'production' | 'staging' | 'test';
@@ -60,6 +66,7 @@ interface Config {
   sendgrid: SendGridConfig;
   brevo: BrevoConfig;
   r2: R2Config;
+  stripe: StripeConfig;
   frontendUrl: string;
   downloadLinkExpiryDays: number;
   sentryDsn: string | undefined;
@@ -201,6 +208,12 @@ function buildConfig(): Config {
       bucketName: process.env.R2_BUCKET_NAME,
     },
 
+    stripe: {
+      secretKey: process.env.STRIPE_SECRET_KEY,
+      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+    },
+
     frontendUrl: optionalEnv('FRONTEND_URL', 'http://localhost:5173'),
     downloadLinkExpiryDays: optionalIntEnv('DOWNLOAD_LINK_EXPIRY_DAYS', 7),
     sentryDsn: process.env.SENTRY_DSN,
@@ -228,6 +241,13 @@ function warnInsecureDefaults(config: Config): void {
 
     if (!config.r2.accountId || !config.r2.accessKeyId || !config.r2.secretAccessKey || !config.r2.bucketName) {
       warnings.push('R2 storage is not fully configured (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME) - stems uploads will fail');
+    }
+
+    if (!config.stripe.secretKey) {
+      warnings.push('STRIPE_SECRET_KEY is not set - collaborator payouts and multi-producer beat checkout will fail');
+    }
+    if (!config.stripe.webhookSecret) {
+      warnings.push('STRIPE_WEBHOOK_SECRET is not set - Stripe webhook signature verification disabled');
     }
 
     if (warnings.length > 0) {
@@ -258,4 +278,4 @@ export const { database, auth, square, email, sendgrid, brevo } = config;
 export const sentryDsn = config.sentryDsn;
 
 // Export type for use in other modules
-export type { Config, DatabaseConfig, AuthConfig, SquareConfig, EmailConfig, SendGridConfig, BrevoConfig, R2Config };
+export type { Config, DatabaseConfig, AuthConfig, SquareConfig, EmailConfig, SendGridConfig, BrevoConfig, R2Config, StripeConfig };

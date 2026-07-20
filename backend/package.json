@@ -36,7 +36,8 @@
     "nodemailer": "^9.0.3",
     "prisma": "5.22.0",
     "sharp": "^0.32.6",
-    "square": "^43.2.1"
+    "square": "^43.2.1",
+    "stripe": "^22.3.2"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
