@@ -1071,6 +1071,40 @@ router.post(
 );
 
 /**
+ * DELETE /api/admin/collaborators/:id
+ * Removes a collaborator (admin only). Blocked if they're still listed on
+ * any beat's splits or have a transfer history - remove them from the
+ * relevant beats first so a beat's splits are never silently left summing
+ * to less than 100.
+ */
+router.delete(
+  '/admin/collaborators/:id',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
+    const collaborator = await prisma.collaborator.findUnique({ where: { id } });
+    if (!collaborator) {
+      throw new NotFoundError('Collaborator not found');
+    }
+
+    const [splitCount, transferCount] = await Promise.all([
+      prisma.beatCollaborator.count({ where: { collaboratorId: id } }),
+      prisma.orderItemTransfer.count({ where: { collaboratorId: id } }),
+    ]);
+    if (splitCount > 0) {
+      throw new ConflictError('Remove this collaborator from all beat splits before deleting them');
+    }
+    if (transferCount > 0) {
+      throw new ConflictError('This collaborator has transfer history and cannot be deleted');
+    }
+
+    await prisma.collaborator.delete({ where: { id } });
+    res.json({ message: 'Collaborator deleted' });
+  })
+);
+
+/**
  * PUT /api/admin/beats/:id/collaborators
  * Replaces a beat's collaborator/split set. Splits must sum to exactly
  * 100 across all rows (admin only). Transactional so a partial write can
