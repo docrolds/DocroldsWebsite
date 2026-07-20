@@ -182,6 +182,15 @@ interface BeatCollaboratorRow {
   splitPercentage: number;
 }
 
+interface OrderTransfer {
+  id: string;
+  amount: number;
+  status: 'PENDING' | 'COMPLETED' | 'FAILED';
+  stripeTransferId: string | null;
+  collaborator: { name: string; onboardingStatus: string };
+  orderItem: { beat: { title: string } };
+}
+
 /** Reported comment (comment moderation) */
 interface ReportedComment {
   id: string;
@@ -276,6 +285,9 @@ export default function AdminDashboard(): JSX.Element | null {
   const [splitsBeat, setSplitsBeat] = useState<Beat | null>(null);
   const [splitsRows, setSplitsRows] = useState<BeatCollaboratorRow[]>([]);
   const [splitsLoading, setSplitsLoading] = useState<boolean>(false);
+  const [showTransfersModal, setShowTransfersModal] = useState<boolean>(false);
+  const [orderTransfers, setOrderTransfers] = useState<OrderTransfer[]>([]);
+  const [transfersLoading, setTransfersLoading] = useState<boolean>(false);
 
   // Promo form state
   const [showPromoModal, setShowPromoModal] = useState<boolean>(false);
@@ -924,6 +936,38 @@ export default function AdminDashboard(): JSX.Element | null {
     }
   };
 
+  const viewOrderTransfers = async (orderId: string): Promise<void> => {
+    setShowTransfersModal(true);
+    setTransfersLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/orders/${orderId}/transfers`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to load transfers');
+      const data = await res.json();
+      setOrderTransfers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      alert('Failed to load transfers');
+      setOrderTransfers([]);
+    } finally {
+      setTransfersLoading(false);
+    }
+  };
+
+  const retryTransfer = async (transferId: string): Promise<void> => {
+    try {
+      const res = await fetch(`${API_URL}/admin/transfers/${transferId}/retry`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Retry failed');
+      setOrderTransfers((prev) => prev.map((t) => (t.id === transferId ? { ...t, status: data.status, stripeTransferId: data.stripeTransferId } : t)));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Retry failed');
+    }
+  };
+
   const dismissReport = async (commentId: string): Promise<void> => {
     try {
       const res = await fetch(`${API_URL}/admin/comments/${commentId}/dismiss`, {
@@ -1511,6 +1555,13 @@ export default function AdminDashboard(): JSX.Element | null {
                               >
                                 <i className="fas fa-clock"></i>
                               </button>
+                              <button
+                                className="icon-btn"
+                                onClick={() => viewOrderTransfers(order.id)}
+                                title="View Collaborator Transfers"
+                              >
+                                <i className="fas fa-people-arrows"></i>
+                              </button>
                               {order.paymentStatus === 'PAID' && (
                                 <button
                                   className="icon-btn danger"
@@ -2004,6 +2055,65 @@ export default function AdminDashboard(): JSX.Element | null {
                   <button className="btn-primary" onClick={savePromo}>
                     {editingPromo ? 'Save Changes' : 'Create Promo'}
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showTransfersModal && (
+            <div className="modal-overlay" onClick={() => setShowTransfersModal(false)}>
+              <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>Collaborator Transfers</h2>
+                  <button className="modal-close" onClick={() => setShowTransfersModal(false)}>
+                    <i className="fas fa-times"></i>
+                  </button>
+                </div>
+                <div className="modal-body">
+                  {transfersLoading ? (
+                    <div className="section-loading"><div className="admin-spinner"></div></div>
+                  ) : orderTransfers.length === 0 ? (
+                    <div className="card-empty">
+                      <i className="fas fa-people-arrows"></i>
+                      <p>No collaborator transfers for this order (solo-beat Square order)</p>
+                    </div>
+                  ) : (
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Beat</th>
+                          <th>Collaborator</th>
+                          <th>Amount</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {orderTransfers.map((t) => (
+                          <tr key={t.id}>
+                            <td>{t.orderItem.beat.title}</td>
+                            <td>{t.collaborator.name}</td>
+                            <td>{formatCurrency(t.amount)}</td>
+                            <td>
+                              <span className={`status-badge ${t.status === 'COMPLETED' ? 'paid' : t.status === 'FAILED' ? 'cancelled' : 'pending'}`}>
+                                {t.status}
+                              </span>
+                            </td>
+                            <td>
+                              {t.status === 'FAILED' && (
+                                <button className="icon-btn" onClick={() => retryTransfer(t.id)} title="Retry Transfer">
+                                  <i className="fas fa-redo"></i>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                <div className="modal-footer">
+                  <button className="btn-secondary" onClick={() => setShowTransfersModal(false)}>Close</button>
                 </div>
               </div>
             </div>

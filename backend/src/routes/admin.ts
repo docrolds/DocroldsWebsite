@@ -1135,6 +1135,83 @@ router.get(
   })
 );
 
+/**
+ * GET /api/admin/orders/:id/transfers
+ * Lists collaborator payout transfers for an order's items (admin only) -
+ * surfaces FAILED transfers (e.g. collaborator not yet onboarded when the
+ * sale happened) so admin has a visible retry action.
+ */
+router.get(
+  '/admin/orders/:id/transfers',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const orderId = req.params.id as string;
+    const transfers = await prisma.orderItemTransfer.findMany({
+      where: { orderItem: { orderId } },
+      include: { collaborator: true, orderItem: { include: { beat: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(transfers);
+  })
+);
+
+/**
+ * POST /api/admin/transfers/:id/retry
+ * Re-attempts a FAILED collaborator transfer (e.g. after the collaborator
+ * has since completed Stripe onboarding). No-op if already COMPLETED.
+ */
+router.post(
+  '/admin/transfers/:id/retry',
+  authenticateToken,
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    if (!isStripeConfigured()) {
+      throw new BadRequestError('Stripe is not configured');
+    }
+
+    const id = req.params.id as string;
+    const transfer = await prisma.orderItemTransfer.findUnique({
+      where: { id },
+      include: { collaborator: true, orderItem: { include: { order: true } } },
+    });
+    if (!transfer) {
+      throw new NotFoundError('Transfer not found');
+    }
+    if (transfer.status === 'COMPLETED') {
+      res.json(transfer);
+      return;
+    }
+    if (!transfer.collaborator.stripeAccountId || transfer.collaborator.onboardingStatus !== 'COMPLETE') {
+      throw new BadRequestError('Collaborator has not completed Stripe onboarding yet');
+    }
+    if (!transfer.orderItem.order.squarePaymentId) {
+      throw new BadRequestError('Order has no payment reference to retry against');
+    }
+
+    const stripe = getStripeClient();
+    const intent = await stripe.paymentIntents.retrieve(transfer.orderItem.order.squarePaymentId);
+    const sourceCharge = typeof intent.latest_charge === 'string' ? intent.latest_charge : intent.latest_charge?.id;
+    if (!sourceCharge) {
+      throw new BadRequestError('Original payment charge could not be found');
+    }
+
+    const stripeTransfer = await stripe.transfers.create({
+      amount: Math.round(transfer.amount * 100),
+      currency: 'usd',
+      destination: transfer.collaborator.stripeAccountId,
+      source_transaction: sourceCharge,
+    });
+
+    const updated = await prisma.orderItemTransfer.update({
+      where: { id },
+      data: { status: 'COMPLETED', stripeTransferId: stripeTransfer.id },
+    });
+
+    res.json(updated);
+  })
+);
+
 // ===========================================
 // STEM SUBMISSIONS (Mixing/Mastering bookings)
 // ===========================================
