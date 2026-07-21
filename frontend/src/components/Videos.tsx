@@ -14,9 +14,10 @@ interface VideoFacadeProps {
   id: string;
   start?: number;
   title: string;
+  visible: boolean;
 }
 
-function VideoFacade({ id, start, title }: VideoFacadeProps): JSX.Element {
+function VideoFacade({ id, start, title, visible }: VideoFacadeProps): JSX.Element {
   const [loaded, setLoaded] = useState(false);
 
   if (loaded) {
@@ -30,12 +31,16 @@ function VideoFacade({ id, start, title }: VideoFacadeProps): JSX.Element {
     );
   }
 
+  // Don't set the thumbnail as a background-image (which fires its request
+  // as soon as it's in the DOM, regardless of scroll position) until the
+  // section has actually scrolled into view - keeps this consistent with
+  // the facade's whole point of not loading anything until it's needed.
   return (
     <button
       type="button"
       className="video-facade"
       onClick={() => setLoaded(true)}
-      style={{ backgroundImage: `url(https://i.ytimg.com/vi/${id}/hqdefault.jpg)` }}
+      style={visible ? { backgroundImage: `url(https://i.ytimg.com/vi/${id}/hqdefault.jpg)` } : undefined}
       aria-label={`Play ${title}`}
     >
       <span className="video-facade-play">
@@ -146,7 +151,7 @@ function Videos(): JSX.Element {
             className="video-card"
           >
             <div className="video-wrapper">
-              <VideoFacade id={video.id} start={video.start} title={`Featured video ${index + 1}`} />
+              <VideoFacade id={video.id} start={video.start} title={`Featured video ${index + 1}`} visible={sectionVisible} />
             </div>
           </div>
         ))}

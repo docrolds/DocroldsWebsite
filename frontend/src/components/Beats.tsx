@@ -19,6 +19,7 @@ interface Beat extends AudioBeat {
   producer?: string;
   soldExclusively?: boolean;
   audioFile: string | null;
+  coverArtThumb?: string | null;
   licensePricing?: LicensePricing;
   [key: string]: unknown; // Index signature for cart compatibility
 }
@@ -60,12 +61,14 @@ function Beats(): JSX.Element {
   const toast = useToast();
 
   useEffect(() => {
-    fetch(`${API_URL}/beats`)
+    // Only ever shows 4 beats and doesn't render like/comment counts, so
+    // ask the API for exactly that instead of downloading the full catalog
+    // (with per-beat count aggregation) and slicing client-side.
+    fetch(`${API_URL}/beats?limit=4&minimal=true`)
       .then((res: Response) => res.json())
       .then((data: Beat[]) => {
         if (data && data.length > 0) {
-          // Only show first 4 beats on homepage
-          setBeats(data.slice(0, 4));
+          setBeats(data);
         }
         setLoading(false);
       })
@@ -257,9 +260,14 @@ function Beats(): JSX.Element {
                   <div className="beat-artwork">
                     {beat.coverArt ? (
                       <img
-                        src={beat.coverArt.startsWith('http') ? beat.coverArt : `${API_URL.replace('/api', '')}${beat.coverArt}`}
+                        src={(() => {
+                          const src = beat.coverArtThumb || beat.coverArt || '';
+                          return src.startsWith('http') ? src : `${API_URL.replace('/api', '')}${src}`;
+                        })()}
                         alt={beat.title}
                         className="artwork-image"
+                        width={40}
+                        height={40}
                       />
                     ) : (
                       <div className={`artwork-placeholder ${getGradientClass(beat.id)}`} aria-hidden="true">

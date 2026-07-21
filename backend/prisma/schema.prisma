@@ -29,6 +29,7 @@ model Beat {
   audioFile  String?  // MP3 preview file
   wavFile    String?  // Full quality WAV file
   coverArt   String?
+  coverArtThumb String? // Smaller (160x160) variant for list/row thumbnails - falls back to coverArt when null
   createdAt  DateTime @default(now())
 
   // Exclusive sale tracking

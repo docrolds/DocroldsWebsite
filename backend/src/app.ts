@@ -74,8 +74,14 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Static file serving for uploads
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// Static file serving for uploads. Uploaded filenames are content-addressed
+// (Date.now()-sanitizedName, never overwritten in place - beats.ts always
+// writes a fresh filename on edit), so it's safe to cache them aggressively
+// rather than paying a conditional-request round-trip on every load.
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
+  maxAge: '1y',
+  immutable: true,
+}));
 
 // Request logging in development
 if (config.nodeEnv !== 'production') {

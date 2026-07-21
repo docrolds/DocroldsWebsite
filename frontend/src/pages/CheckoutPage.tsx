@@ -62,6 +62,35 @@ declare global {
   }
 }
 
+const SQUARE_SDK_URL = 'https://sandbox.web.squarecdn.com/v1/square.js';
+
+/**
+ * Loads the Square Web Payments SDK on demand instead of via a blocking
+ * <script> tag in index.html - previously that tag loaded Square's SDK on
+ * every single page (including the homepage), even though only this page
+ * ever uses it. Safe to call more than once (e.g. re-visiting checkout in
+ * the same session): resolves immediately if the script is already present.
+ */
+function loadSquareSdk(): Promise<void> {
+  if (window.Square) return Promise.resolve();
+
+  const existing = document.querySelector<HTMLScriptElement>(`script[src="${SQUARE_SDK_URL}"]`);
+  if (existing) {
+    return new Promise((resolve, reject) => {
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => reject(new Error('Failed to load Square SDK')));
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = SQUARE_SDK_URL;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load Square SDK'));
+    document.head.appendChild(script);
+  });
+}
+
 type Processor = 'SQUARE' | 'STRIPE' | null;
 
 // ============================================
@@ -226,8 +255,17 @@ export default function CheckoutPage(): ReactNode {
     if (processor !== 'SQUARE') return;
 
     async function initializeSquare(): Promise<void> {
+      try {
+        await loadSquareSdk();
+      } catch (err) {
+        console.error('Failed to load Square SDK:', err);
+        setError('Payment system failed to load. Please refresh the page.');
+        setSquareLoading(false);
+        return;
+      }
+
       if (!window.Square) {
-        console.error('Square SDK not loaded');
+        console.error('Square SDK loaded but window.Square is unavailable');
         setError('Payment system failed to load. Please refresh the page.');
         setSquareLoading(false);
         return;

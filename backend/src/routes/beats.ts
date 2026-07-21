@@ -180,18 +180,25 @@ async function getAudioDuration(filePath: string): Promise<number | null> {
 }
 
 /**
- * Process cover art image - resize and optimize for web
+ * Process cover art image - resize and optimize for web, producing both a
+ * full-size (800x800) image for detail views and a smaller (160x160) thumb
+ * for the list/row thumbnails that Beats.tsx/BeatsPage.tsx actually render
+ * most often, so those views aren't downloading the full-size image just
+ * to display it at ~40px.
  * @param uploadPath - Path to the uploaded image
- * @returns Processed file path
+ * @returns Processed file paths, or the original path for both on failure
  */
-async function processCoverArt(uploadPath: string): Promise<string> {
+async function processCoverArt(uploadPath: string): Promise<{ full: string; thumb: string }> {
   try {
     const fullPath = path.join(process.cwd(), uploadPath);
     const outputDir = path.dirname(fullPath);
     const filename = path.basename(fullPath, path.extname(fullPath));
     const outputPath = path.join(outputDir, `${filename}-processed.webp`);
+    const thumbPath = path.join(outputDir, `${filename}-thumb.webp`);
 
-    await sharp(fullPath)
+    const inputBuffer = fs.readFileSync(fullPath);
+
+    await sharp(inputBuffer)
       .resize(800, 800, {
         fit: 'cover',
         position: 'center',
@@ -199,15 +206,26 @@ async function processCoverArt(uploadPath: string): Promise<string> {
       .webp({ quality: 85 })
       .toFile(outputPath);
 
+    await sharp(inputBuffer)
+      .resize(160, 160, {
+        fit: 'cover',
+        position: 'center',
+      })
+      .webp({ quality: 80 })
+      .toFile(thumbPath);
+
     // Remove original file
     fs.unlinkSync(fullPath);
 
-    // Return the relative path
-    return outputPath.replace(process.cwd(), '').replace(/\\/g, '/');
+    return {
+      full: outputPath.replace(process.cwd(), '').replace(/\\/g, '/'),
+      thumb: thumbPath.replace(process.cwd(), '').replace(/\\/g, '/'),
+    };
   } catch (error) {
     console.error('[COVER ART] Error processing cover art:', (error as Error).message);
-    // Return original path if processing fails
-    return uploadPath;
+    // Return original path for both on failure, so the beat still has *a*
+    // usable image rather than none
+    return { full: uploadPath, thumb: uploadPath };
   }
 }
 
@@ -227,12 +245,57 @@ const mockBeats: Partial<Beat>[] = [
 
 /**
  * GET /api/beats
- * Get all beats with like and comment counts
+ * Get all beats with like and comment counts.
+ *
+ * Accepts two optional query params for callers that don't need the full
+ * payload (e.g. the homepage widget, which only ever shows a handful of
+ * beats and doesn't render like/comment counts):
+ *   - ?limit=N caps the number of rows returned (Prisma `take`)
+ *   - ?minimal=true skips the like/comment count aggregation and only
+ *     selects the fields such callers actually render
+ * Neither param is required - an unparameterized call behaves exactly as
+ * before, which is what BeatsPage.tsx (the full catalog, which does need
+ * the counts) continues to use.
  */
+const MINIMAL_BEAT_FIELDS = {
+  id: true,
+  title: true,
+  genre: true,
+  category: true,
+  bpm: true,
+  key: true,
+  duration: true,
+  price: true,
+  producedBy: true,
+  audioFile: true,
+  wavFile: true,
+  coverArt: true,
+  coverArtThumb: true,
+  soldExclusively: true,
+  createdAt: true,
+} as const;
+
 router.get(
   '/',
-  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const limitParam = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : undefined;
+    const take = limitParam && Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined;
+    const minimal = req.query.minimal === 'true';
+
+    if (minimal) {
+      const beats = await prisma.beat.findMany({ select: MINIMAL_BEAT_FIELDS, take });
+
+      if (beats.length === 0) {
+        res.json(take ? mockBeats.slice(0, take) : mockBeats);
+        return;
+      }
+
+      res.json(beats.map((beat) => ({ ...beat, licensePricing: getLicensePricing(beat) })));
+      return;
+    }
+
     const beats = await prisma.beat.findMany({
+      take,
       include: {
         _count: {
           select: {
@@ -244,7 +307,7 @@ router.get(
     });
 
     if (beats.length === 0) {
-      res.json(mockBeats);
+      res.json(take ? mockBeats.slice(0, take) : mockBeats);
       return;
     }
 
@@ -332,6 +395,7 @@ router.post(
     let audioFile: string | null = null;
     let wavFile: string | null = null;
     let coverArt: string | null = null;
+    let coverArtThumb: string | null = null;
     let extractedDuration = duration ? parseInt(String(duration)) : null;
 
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
@@ -363,8 +427,9 @@ router.post(
       // Handle cover art
       if (files.coverArt && files.coverArt[0]) {
         const uploadPath = `uploads/covers/${files.coverArt[0].filename}`;
-        const processedPath = await processCoverArt(uploadPath);
-        coverArt = processedPath.replace(/\\/g, '/');
+        const processed = await processCoverArt(uploadPath);
+        coverArt = processed.full.replace(/\\/g, '/');
+        coverArtThumb = processed.thumb.replace(/\\/g, '/');
       }
     }
 
@@ -383,6 +448,7 @@ router.post(
         audioFile,
         wavFile,
         coverArt,
+        coverArtThumb,
         soldExclusively: isSoldExclusively,
         soldExclusivelyAt: isSoldExclusively ? new Date() : null,
         soldExclusivelyTo: isSoldExclusively && soldExclusivelyTo ? soldExclusivelyTo.trim() : null,
@@ -496,8 +562,9 @@ router.put(
       // Handle cover art
       if (files.coverArt && files.coverArt[0]) {
         const uploadPath = `uploads/covers/${files.coverArt[0].filename}`;
-        const processedPath = await processCoverArt(uploadPath);
-        updateData.coverArt = processedPath.replace(/\\/g, '/');
+        const processed = await processCoverArt(uploadPath);
+        updateData.coverArt = processed.full.replace(/\\/g, '/');
+        updateData.coverArtThumb = processed.thumb.replace(/\\/g, '/');
       }
     }
 

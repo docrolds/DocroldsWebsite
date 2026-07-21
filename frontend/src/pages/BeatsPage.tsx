@@ -24,6 +24,7 @@ interface Beat {
   tags?: string[];
   audioFile: string | null;
   coverArt?: string;
+  coverArtThumb?: string | null;
   likeCount?: number;
   commentCount?: number;
   soldExclusively?: boolean;
@@ -800,9 +801,15 @@ function BeatsPage(): ReactNode {
                       <div className="beat-artwork">
                         {beat.coverArt ? (
                           <img
-                            src={beat.coverArt.startsWith('http') ? beat.coverArt : `${API_URL.replace('/api', '')}${beat.coverArt}`}
+                            src={(() => {
+                              const src = beat.coverArtThumb || beat.coverArt || '';
+                              return src.startsWith('http') ? src : `${API_URL.replace('/api', '')}${src}`;
+                            })()}
                             alt={beat.title}
                             className="artwork-image"
+                            width={40}
+                            height={40}
+                            loading="lazy"
                           />
                         ) : (
                           <div className={`artwork-placeholder ${getGradientClass(beat.id)}`} aria-hidden="true">
