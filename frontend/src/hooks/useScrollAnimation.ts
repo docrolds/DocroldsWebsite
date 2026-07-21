@@ -133,6 +133,10 @@ export function useCountUp(end: number, duration: number = 2000, start: boolean 
 
 /**
  * Hook for parallax scroll effect
+ * @deprecated Drives the effect through React state, which re-renders
+ * whatever component calls it (and, if that component sits high in the
+ * tree, everything beneath it) on every scroll frame. Use useParallaxRef
+ * instead, which mutates the DOM directly and never re-renders React.
  */
 export function useParallax(speed: number = 0.5, maxScroll: number | null = null): number {
   const [offset, setOffset] = useState(0);
@@ -157,6 +161,44 @@ export function useParallax(speed: number = 0.5, maxScroll: number | null = null
   }, [speed, maxScroll]);
 
   return offset;
+}
+
+/**
+ * Parallax scroll effect that writes directly to the DOM via a ref instead
+ * of React state, so scrolling never triggers a React re-render (let alone
+ * one that cascades to every section on the page, as the old useParallax
+ * did when called from a high-level component like HomePage).
+ */
+export function useParallaxRef<T extends HTMLElement = HTMLDivElement>(
+  speed: number = 0.5,
+  maxScroll: number | null = null
+): MutableRefObject<T | null> {
+  const ref = useRef<T | null>(null);
+
+  useEffect(() => {
+    let rafId: number | null = null;
+
+    const handleScroll = () => {
+      if (rafId !== null) return; // a frame is already scheduled
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const scrollY = window.scrollY;
+        const max = maxScroll || window.innerHeight * 1.5;
+        if (scrollY <= max && ref.current) {
+          ref.current.style.transform = `translate3d(0, ${scrollY * speed}px, 0)`;
+        }
+      });
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [speed, maxScroll]);
+
+  return ref;
 }
 
 export default useScrollAnimation;

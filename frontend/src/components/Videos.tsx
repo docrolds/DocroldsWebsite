@@ -3,6 +3,49 @@ import { API_URL } from '../config';
 import { useScrollAnimation } from '../hooks/useScrollAnimation';
 
 // ============================================================================
+// Facade (click-to-load) player - avoids mounting YouTube's full embed
+// (which pulls down its own heavy JS/CSS player chrome) until the visitor
+// actually wants to watch, instead of eagerly loading all of them on page
+// load. Shows YouTube's static thumbnail + a play button; only swaps in
+// the real iframe once clicked.
+// ============================================================================
+
+interface VideoFacadeProps {
+  id: string;
+  start?: number;
+  title: string;
+}
+
+function VideoFacade({ id, start, title }: VideoFacadeProps): JSX.Element {
+  const [loaded, setLoaded] = useState(false);
+
+  if (loaded) {
+    return (
+      <iframe
+        src={`https://www.youtube.com/embed/${id}?autoplay=1${start ? `&start=${start}` : ''}`}
+        title={title}
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowFullScreen
+      ></iframe>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="video-facade"
+      onClick={() => setLoaded(true)}
+      style={{ backgroundImage: `url(https://i.ytimg.com/vi/${id}/hqdefault.jpg)` }}
+      aria-label={`Play ${title}`}
+    >
+      <span className="video-facade-play">
+        <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+      </span>
+    </button>
+  );
+}
+
+// ============================================================================
 // Type Definitions
 // ============================================================================
 
@@ -103,12 +146,7 @@ function Videos(): JSX.Element {
             className="video-card"
           >
             <div className="video-wrapper">
-              <iframe
-                src={`https://www.youtube.com/embed/${video.id}${video.start ? `?start=${video.start}` : ''}`}
-                title={`Featured video ${index + 1}`}
-                allowFullScreen
-                loading="lazy"
-              ></iframe>
+              <VideoFacade id={video.id} start={video.start} title={`Featured video ${index + 1}`} />
             </div>
           </div>
         ))}

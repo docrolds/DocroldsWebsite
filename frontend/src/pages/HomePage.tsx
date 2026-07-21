@@ -8,7 +8,7 @@ import Team from '../components/Team';
 import Beats from '../components/Beats';
 import Discord from '../components/Discord';
 import FAQ from '../components/FAQ';
-import { useParallax, useScrollAnimation, useCountUp } from '../hooks/useScrollAnimation';
+import { useParallaxRef, useScrollAnimation, useCountUp } from '../hooks/useScrollAnimation';
 
 // ============================================
 // Type Definitions
@@ -125,8 +125,11 @@ function HomePage(): ReactNode {
     imageUrl: ''
   });
 
-  // Parallax effect for hero background
-  const parallaxOffset = useParallax(0.4);
+  // Parallax effect for hero background - writes directly to the DOM via
+  // this ref, so scrolling never triggers a React re-render of HomePage
+  // (which would otherwise cascade to every section below it, none of
+  // which are memoized).
+  const parallaxRef = useParallaxRef<HTMLDivElement>(0.4);
 
   useEffect(() => {
     fetch(`${API_URL}/content`)
@@ -151,11 +154,9 @@ function HomePage(): ReactNode {
       <section id="home" className="hero-fullscreen">
         {/* Parallax Background Image */}
         <div
+          ref={parallaxRef}
           className="hero-bg-parallax parallax-bg"
-          style={{
-            backgroundImage: 'url("/studio-hero.jpg")',
-            transform: `translate3d(0, ${parallaxOffset}px, 0)`
-          }}
+          style={{ backgroundImage: 'url("/studio-hero.jpg")' }}
         />
 
         {/* Gradient Overlay */}
