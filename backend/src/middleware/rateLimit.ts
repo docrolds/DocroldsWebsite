@@ -37,3 +37,18 @@ export const paymentLimiter = rateLimit({
   message: { message: 'Too many payment attempts, please try again later.' },
   handler: jsonHandler('Too many payment attempts, please try again later.'),
 });
+
+/**
+ * Large-file-upload endpoints (stems submission) - the route is already
+ * token-gated per booking, but each request can buffer up to ~1.2GB in
+ * memory before uploading to R2, so unbounded concurrent/repeat requests
+ * are still a cheap storage/memory-abuse vector worth throttling.
+ */
+export const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many upload attempts, please try again later.' },
+  handler: jsonHandler('Too many upload attempts, please try again later.'),
+});

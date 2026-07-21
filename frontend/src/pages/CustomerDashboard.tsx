@@ -43,7 +43,7 @@ interface Order {
   customerId: string;
   customerEmail?: string;
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED';
-  paymentStatus: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
+  paymentStatus: 'PENDING' | 'PROCESSING' | 'PAID' | 'FAILED' | 'REFUNDED';
   totalAmount: number;
   downloadToken?: string;
   downloadExpiresAt?: string;
@@ -508,7 +508,7 @@ export default function CustomerDashboard(): JSX.Element | null {
                               </div>
                             )}
                           </div>
-                          <div className="beat-info">
+                          <div className="dashboard-beat-info">
                             <h4>{beat.title}</h4>
                             <p>{beat.genre} • {beat.bpm} BPM</p>
                           </div>

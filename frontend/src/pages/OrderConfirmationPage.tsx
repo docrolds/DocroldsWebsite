@@ -30,7 +30,12 @@ interface OrderCustomer {
   isGuest?: boolean;
 }
 
-type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED';
+// PROCESSING is a brief transient state (Stripe checkout confirmation
+// atomically claims an order PENDING -> PROCESSING before finalizing it
+// PAID/FAILED - see orders.ts's /checkout/confirm-stripe-payment) that this
+// page's polling should treat the same as PENDING rather than getting
+// stuck if a fetch happens to land in that narrow window.
+type PaymentStatus = 'PENDING' | 'PROCESSING' | 'PAID' | 'FAILED';
 
 interface Order {
   orderNumber: string;
@@ -95,8 +100,8 @@ export default function OrderConfirmationPage(): ReactNode {
 
       setOrder(data);
 
-      // If payment is still pending and we came from success, poll for updates
-      if (data.paymentStatus === 'PENDING' && isSuccess && !pollInterval.current) {
+      // If payment is still pending/processing and we came from success, poll for updates
+      if ((data.paymentStatus === 'PENDING' || data.paymentStatus === 'PROCESSING') && isSuccess && !pollInterval.current) {
         pollInterval.current = setInterval(async () => {
           try {
             const res = await fetch(`${API_URL}/orders/${orderNumber}?key=${confirmationKey}`);
@@ -163,7 +168,7 @@ export default function OrderConfirmationPage(): ReactNode {
   }
 
   const isPaid = order.paymentStatus === 'PAID';
-  const isPending = order.paymentStatus === 'PENDING';
+  const isPending = order.paymentStatus === 'PENDING' || order.paymentStatus === 'PROCESSING';
 
   return (
     <div className="order-page-v2">

@@ -21,7 +21,7 @@ import { sendEmail } from '../services/email';
 import { captureError } from '../services/sentry';
 import { escapeHtml } from '../utils/text';
 import { getPresignedDownloadUrl } from '../services/storage';
-import { getStripeClient, isStripeConfigured } from '../services/stripe';
+import { getStripeClient, isStripeConfigured, transferToCollaborator } from '../services/stripe';
 import type {
   PhotoUploadRequest,
   TeamMemberRequest,
@@ -1230,16 +1230,17 @@ router.post(
       throw new BadRequestError('Original payment charge could not be found');
     }
 
-    const stripeTransfer = await stripe.transfers.create({
-      amount: Math.round(transfer.amount * 100),
-      currency: 'usd',
-      destination: transfer.collaborator.stripeAccountId,
-      source_transaction: sourceCharge,
+    const stripeTransferId = await transferToCollaborator({
+      orderItemId: transfer.orderItemId,
+      collaboratorId: transfer.collaboratorId,
+      amount: transfer.amount,
+      stripeAccountId: transfer.collaborator.stripeAccountId,
+      sourceCharge,
     });
 
     const updated = await prisma.orderItemTransfer.update({
       where: { id },
-      data: { status: 'COMPLETED', stripeTransferId: stripeTransfer.id },
+      data: { status: 'COMPLETED', stripeTransferId },
     });
 
     res.json(updated);

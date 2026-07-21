@@ -6,6 +6,7 @@ import { useAudioPlayer, Beat as AudioBeat } from '../context/AudioPlayerContext
 import { useToast } from '../context/NotificationContext';
 import { useCustomerAuth, Customer } from '../context/CustomerAuthContext';
 import AuthPromptModal from '../components/AuthPromptModal';
+import { getGradientClass } from '../utils/beatDisplay';
 
 // ============================================
 // Type Definitions
@@ -16,6 +17,7 @@ interface Beat {
   title: string;
   producer?: string;
   producedBy?: string;
+  displayProducer?: string;
   genre: string;
   bpm: number;
   key: string;
@@ -57,16 +59,6 @@ interface Playlist {
 }
 
 type AuthActionType = 'like' | 'playlist';
-
-// ============================================
-// Helper Functions
-// ============================================
-
-// Generate consistent gradient class based on beat ID
-const getGradientClass = (beatId: string | number): string => {
-  const hash = String(beatId).split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return `gradient-${(hash % 10) + 1}`;
-};
 
 // ============================================
 // BeatsPage Component
@@ -196,7 +188,7 @@ function BeatsPage(): ReactNode {
   // Delete a comment
   const deleteComment = async (commentId: string, isReply: boolean = false, parentId: string | null = null): Promise<void> => {
     try {
-      const res = await fetch(`${API_URL}/comments/${commentId}`, {
+      const res = await fetch(`${API_URL}/beats/comments/${commentId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -316,7 +308,7 @@ function BeatsPage(): ReactNode {
     }
 
     try {
-      const res = await fetch(`${API_URL}/comments/${commentId}/like`, {
+      const res = await fetch(`${API_URL}/beats/comments/${commentId}/like`, {
         method: isLiked ? 'DELETE' : 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -353,6 +345,29 @@ function BeatsPage(): ReactNode {
       }
 
       toast.error('Failed to update like', 'Please try again');
+    }
+  };
+
+  // Flags a comment for admin review (backend already supports this via
+  // POST /beats/comments/:id/report and the admin Reported Comments
+  // dashboard - this button is what makes that reachable at all).
+  const [reportedCommentIds, setReportedCommentIds] = useState<Set<string>>(new Set());
+
+  const reportComment = async (commentId: string): Promise<void> => {
+    if (!isAuthenticated) {
+      toast.warning('Sign in required', 'Please sign in to report comments');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_URL}/beats/comments/${commentId}/report`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to report comment');
+      setReportedCommentIds((prev: Set<string>) => new Set(prev).add(commentId));
+      toast.success('Comment reported', 'Thanks - our team will review it');
+    } catch (err) {
+      toast.error('Failed to report comment', 'Please try again');
     }
   };
 
@@ -833,7 +848,7 @@ function BeatsPage(): ReactNode {
                           {beat.title}
                           {beat.soldExclusively && <span className="sold-inline-badge">SOLD</span>}
                         </span>
-                        <span className="beat-producer">{beat.producedBy || beat.producer || 'Doc Rolds'}</span>
+                        <span className="beat-producer">{beat.displayProducer || beat.producedBy || beat.producer || 'Doc Rolds'}</span>
                       </div>
                     </div>
                     {/* Inline Actions: Heart, Plus, Comments */}
@@ -1255,7 +1270,7 @@ function BeatsPage(): ReactNode {
                               <i className="far fa-comment"></i>
                               Reply
                             </button>
-                            {customer?.id === comment.customerId && (
+                            {customer?.id === comment.customerId ? (
                               <button
                                 className="comment-delete-btn"
                                 onClick={() => deleteComment(comment.id)}
@@ -1263,6 +1278,16 @@ function BeatsPage(): ReactNode {
                               >
                                 <i className="fas fa-trash-alt"></i>
                                 Delete
+                              </button>
+                            ) : (
+                              <button
+                                className="comment-report-btn"
+                                onClick={() => reportComment(comment.id)}
+                                disabled={reportedCommentIds.has(comment.id)}
+                                aria-label={reportedCommentIds.has(comment.id) ? 'Comment reported' : 'Report comment'}
+                              >
+                                <i className="fas fa-flag"></i>
+                                {reportedCommentIds.has(comment.id) ? 'Reported' : 'Report'}
                               </button>
                             )}
                           </div>
@@ -1360,7 +1385,7 @@ function BeatsPage(): ReactNode {
                                     <i className={`${likedComments.has(reply.id) ? 'fas' : 'far'} fa-heart`}></i>
                                     {reply.likeCount && reply.likeCount > 0 && <span>{reply.likeCount}</span>}
                                   </button>
-                                  {customer?.id === reply.customerId && (
+                                  {customer?.id === reply.customerId ? (
                                     <button
                                       className="comment-delete-btn"
                                       onClick={() => deleteComment(reply.id, true, comment.id)}
@@ -1368,6 +1393,16 @@ function BeatsPage(): ReactNode {
                                     >
                                       <i className="fas fa-trash-alt"></i>
                                       Delete
+                                    </button>
+                                  ) : (
+                                    <button
+                                      className="comment-report-btn"
+                                      onClick={() => reportComment(reply.id)}
+                                      disabled={reportedCommentIds.has(reply.id)}
+                                      aria-label={reportedCommentIds.has(reply.id) ? 'Reply reported' : 'Report reply'}
+                                    >
+                                      <i className="fas fa-flag"></i>
+                                      {reportedCommentIds.has(reply.id) ? 'Reported' : 'Report'}
                                     </button>
                                   )}
                                 </div>

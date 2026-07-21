@@ -256,6 +256,8 @@ export default function ReschedulePage(): ReactNode {
         return `${booking.hours || 1} Hour Recording Session`;
       case 'MIXING':
         return `${booking.mixingTier || 'Standard'} Mixing Service`;
+      case 'MASTERING':
+        return `${booking.mixingTier || 'Digital'} Mastering Service`;
       case 'CONSULTING':
         return 'Consultation Call';
       case 'PROMO':

@@ -58,4 +58,4 @@ export {
 // RATE LIMITING MIDDLEWARE
 // ===========================================
 
-export { authLimiter, paymentLimiter } from './rateLimit';
+export { authLimiter, paymentLimiter, uploadLimiter } from './rateLimit';

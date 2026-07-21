@@ -23,6 +23,7 @@ import {
 import { sendEmail } from '../services/email';
 import { captureError } from '../services/sentry';
 import { escapeHtml } from '../utils/text';
+import { extractSquareError } from '../utils/square';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -625,13 +626,12 @@ router.post(
       captureError(error, { bookingNumber, context: 'booking-create' });
 
       // Handle Square API errors
-      const squareError = error as { errors?: Array<{ detail?: string; code?: string }> };
-      if (squareError.errors) {
-        const firstError = squareError.errors[0];
+      const firstError = extractSquareError(error);
+      if (firstError) {
         res.status(400).json({
           success: false,
-          message: firstError?.detail || 'Payment failed',
-          code: firstError?.code,
+          message: firstError.detail || 'Payment failed',
+          code: firstError.code,
         });
         return;
       }
@@ -1185,10 +1185,9 @@ router.post(
       console.error('[REFUND] Error refunding booking:', error);
       captureError(error, { bookingNumber: booking.bookingNumber, context: 'admin-refund-booking' });
 
-      const squareError = error as { errors?: Array<{ detail?: string; code?: string }> };
-      if (squareError.errors) {
-        const firstError = squareError.errors[0];
-        throw new BadRequestError(firstError?.detail || 'Refund failed', firstError?.code);
+      const firstError = extractSquareError(error);
+      if (firstError) {
+        throw new BadRequestError(firstError.detail || 'Refund failed', firstError.code);
       }
 
       throw new InternalError('Failed to process refund');

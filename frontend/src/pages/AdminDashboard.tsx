@@ -91,7 +91,7 @@ interface Order {
   customerId?: string;
   customerEmail: string;
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED';
-  paymentStatus: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
+  paymentStatus: 'PENDING' | 'PROCESSING' | 'PAID' | 'FAILED' | 'REFUNDED';
   totalAmount: number;
   downloadToken?: string;
   downloadExpiresAt?: string;
@@ -285,6 +285,7 @@ export default function AdminDashboard(): JSX.Element | null {
   const [splitsBeat, setSplitsBeat] = useState<Beat | null>(null);
   const [splitsRows, setSplitsRows] = useState<BeatCollaboratorRow[]>([]);
   const [splitsLoading, setSplitsLoading] = useState<boolean>(false);
+  const [pendingSplitRowIndex, setPendingSplitRowIndex] = useState<number | null>(null);
   const [showTransfersModal, setShowTransfersModal] = useState<boolean>(false);
   const [orderTransfers, setOrderTransfers] = useState<OrderTransfer[]>([]);
   const [transfersLoading, setTransfersLoading] = useState<boolean>(false);
@@ -860,8 +861,24 @@ export default function AdminDashboard(): JSX.Element | null {
       setShowAddCollaboratorModal(false);
       setCollaboratorForm({ name: '', email: '', isBusinessAccount: false });
       fetchCollaborators();
+      if (pendingSplitRowIndex !== null) {
+        const rowIndex = pendingSplitRowIndex;
+        setSplitsRows((rows) => rows.map((r, i) => (i === rowIndex ? { ...r, collaboratorId: data.id } : r)));
+        setPendingSplitRowIndex(null);
+        setShowSplitsModal(true);
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to create collaborator');
+    }
+  };
+
+  // Closes the Add Collaborator modal, reopening the splits modal behind it
+  // if it was opened via the splits editor's "+ Add new collaborator" option.
+  const closeAddCollaboratorModal = (): void => {
+    setShowAddCollaboratorModal(false);
+    if (pendingSplitRowIndex !== null) {
+      setPendingSplitRowIndex(null);
+      setShowSplitsModal(true);
     }
   };
 
@@ -1129,15 +1146,15 @@ export default function AdminDashboard(): JSX.Element | null {
                 <div className="admin-card">
                   <div className="admin-card-header">
                     <h2>Recent Orders</h2>
-                    <button className="card-action" onClick={() => setActiveSection('orders')}>
+                    <button className="admin-card-action" onClick={() => setActiveSection('orders')}>
                       View All <i className="fas fa-arrow-right"></i>
                     </button>
                   </div>
                   <div className="admin-card-content">
                     {loading ? (
-                      <div className="card-loading"><div className="admin-spinner small"></div></div>
+                      <div className="admin-card-loading"><div className="admin-spinner small"></div></div>
                     ) : orders.length === 0 ? (
-                      <div className="card-empty">
+                      <div className="admin-card-empty">
                         <i className="fas fa-shopping-cart"></i>
                         <p>No orders yet</p>
                       </div>
@@ -1654,7 +1671,7 @@ export default function AdminDashboard(): JSX.Element | null {
               ) : filteredBookings.length === 0 ? (
                 <div className="admin-card">
                   <div className="admin-card-content">
-                    <div className="card-empty">
+                    <div className="admin-card-empty">
                       <i className="fas fa-calendar-alt"></i>
                       <p>No bookings found</p>
                     </div>
@@ -2073,7 +2090,7 @@ export default function AdminDashboard(): JSX.Element | null {
                   {transfersLoading ? (
                     <div className="section-loading"><div className="admin-spinner"></div></div>
                   ) : orderTransfers.length === 0 ? (
-                    <div className="card-empty">
+                    <div className="admin-card-empty">
                       <i className="fas fa-people-arrows"></i>
                       <p>No collaborator transfers for this order (solo-beat Square order)</p>
                     </div>
@@ -2132,7 +2149,7 @@ export default function AdminDashboard(): JSX.Element | null {
                   {stemsLoading ? (
                     <div className="section-loading"><div className="admin-spinner"></div></div>
                   ) : stemSubmissions.length === 0 ? (
-                    <div className="card-empty">
+                    <div className="admin-card-empty">
                       <i className="fas fa-file-audio"></i>
                       <p>No stems submitted yet</p>
                     </div>
@@ -2188,7 +2205,7 @@ export default function AdminDashboard(): JSX.Element | null {
               {collaborators.length === 0 ? (
                 <div className="admin-card">
                   <div className="admin-card-content">
-                    <div className="card-empty">
+                    <div className="admin-card-empty">
                       <i className="fas fa-handshake"></i>
                       <p>No collaborators yet</p>
                     </div>
@@ -2234,11 +2251,11 @@ export default function AdminDashboard(): JSX.Element | null {
           )}
 
           {showAddCollaboratorModal && (
-            <div className="modal-overlay" onClick={() => setShowAddCollaboratorModal(false)}>
+            <div className="modal-overlay" onClick={closeAddCollaboratorModal}>
               <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-header">
                   <h2>Add Collaborator</h2>
-                  <button className="modal-close" onClick={() => setShowAddCollaboratorModal(false)}>
+                  <button className="modal-close" onClick={closeAddCollaboratorModal}>
                     <i className="fas fa-times"></i>
                   </button>
                 </div>
@@ -2274,7 +2291,7 @@ export default function AdminDashboard(): JSX.Element | null {
                     </div>
                   </div>
                   <div className="modal-footer">
-                    <button type="button" className="btn-secondary" onClick={() => setShowAddCollaboratorModal(false)}>Cancel</button>
+                    <button type="button" className="btn-secondary" onClick={closeAddCollaboratorModal}>Cancel</button>
                     <button type="submit" className="btn-primary">Create</button>
                   </div>
                 </form>
@@ -2306,6 +2323,12 @@ export default function AdminDashboard(): JSX.Element | null {
                           <select
                             value={row.collaboratorId}
                             onChange={(e) => {
+                              if (e.target.value === '__new__') {
+                                setPendingSplitRowIndex(idx);
+                                setShowSplitsModal(false);
+                                setShowAddCollaboratorModal(true);
+                                return;
+                              }
                               const updated = [...splitsRows];
                               updated[idx] = { ...updated[idx], collaboratorId: e.target.value };
                               setSplitsRows(updated);
@@ -2317,6 +2340,7 @@ export default function AdminDashboard(): JSX.Element | null {
                             {collaborators.map((c) => (
                               <option key={c.id} value={c.id}>{c.name}{c.isBusinessAccount ? ' (Doc Rolds)' : ''}</option>
                             ))}
+                            <option value="__new__">+ Add new collaborator...</option>
                           </select>
                           <input
                             type="number"
@@ -2381,7 +2405,7 @@ export default function AdminDashboard(): JSX.Element | null {
               ) : reportedComments.length === 0 ? (
                 <div className="admin-card">
                   <div className="admin-card-content">
-                    <div className="card-empty">
+                    <div className="admin-card-empty">
                       <i className="fas fa-flag"></i>
                       <p>No reported comments</p>
                     </div>
@@ -2522,7 +2546,7 @@ export default function AdminDashboard(): JSX.Element | null {
                         ))}
                       </div>
                     ) : (
-                      <div className="card-empty">
+                      <div className="admin-card-empty">
                         <i className="fas fa-chart-bar"></i>
                         <p>No data available</p>
                       </div>

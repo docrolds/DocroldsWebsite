@@ -22,7 +22,7 @@ import {
   optionalCustomerAuth,
 } from '../middleware';
 import { asyncHandler, BadRequestError, NotFoundError, ConflictError } from '../middleware';
-import { getLicensePricing } from '../services/pricing';
+import { getLicensePricing, getDisplayProducer } from '../services/pricing';
 import { hasKnownFileSignatureFile, sanitizeFilename } from '../utils/fileValidation';
 import type {
   AuthenticatedCustomerRequest,
@@ -257,6 +257,12 @@ const mockBeats: Partial<Beat>[] = [
  * before, which is what BeatsPage.tsx (the full catalog, which does need
  * the counts) continues to use.
  */
+// wavFile (the full-quality, Unlimited-license-only master) is deliberately
+// excluded here and from the full listing/detail responses below - it's
+// the paid deliverable, gated behind the token-based download flow in
+// orders.ts, which resolves it server-side directly from Prisma and never
+// needs a client to have already seen the raw path. audioFile (the MP3
+// preview) stays public - that's the intended pre-purchase preview.
 const MINIMAL_BEAT_FIELDS = {
   id: true,
   title: true,
@@ -268,18 +274,20 @@ const MINIMAL_BEAT_FIELDS = {
   price: true,
   producedBy: true,
   audioFile: true,
-  wavFile: true,
   coverArt: true,
   coverArtThumb: true,
   soldExclusively: true,
   createdAt: true,
+  beatCollaborators: { select: { splitPercentage: true, collaborator: { select: { name: true } } } },
 } as const;
+
+const MAX_BEATS_LIMIT = 100;
 
 router.get(
   '/',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const limitParam = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : undefined;
-    const take = limitParam && Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined;
+    const take = limitParam && Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, MAX_BEATS_LIMIT) : undefined;
     const minimal = req.query.minimal === 'true';
 
     if (minimal) {
@@ -290,7 +298,7 @@ router.get(
         return;
       }
 
-      res.json(beats.map((beat) => ({ ...beat, licensePricing: getLicensePricing(beat) })));
+      res.json(beats.map((beat) => ({ ...beat, licensePricing: getLicensePricing(beat), displayProducer: getDisplayProducer(beat) })));
       return;
     }
 
@@ -303,6 +311,7 @@ router.get(
             comments: true,
           },
         },
+        beatCollaborators: { select: { splitPercentage: true, collaborator: { select: { name: true } } } },
       },
     });
 
@@ -314,10 +323,12 @@ router.get(
     // Transform _count to likeCount and commentCount for easier frontend usage
     const beatsWithCounts = beats.map((beat) => ({
       ...beat,
+      wavFile: undefined, // never expose the paid master's path publicly - see MINIMAL_BEAT_FIELDS comment above
       likeCount: beat._count.likes,
       commentCount: beat._count.comments,
       _count: undefined,
       licensePricing: getLicensePricing(beat),
+      displayProducer: getDisplayProducer(beat),
     }));
 
     res.json(beatsWithCounts);
@@ -341,6 +352,7 @@ router.get(
             comments: true,
           },
         },
+        beatCollaborators: { select: { splitPercentage: true, collaborator: { select: { name: true } } } },
       },
     });
 
@@ -350,10 +362,12 @@ router.get(
 
     res.json({
       ...beat,
+      wavFile: undefined, // never expose the paid master's path publicly - see MINIMAL_BEAT_FIELDS comment above
       likeCount: beat._count.likes,
       commentCount: beat._count.comments,
       _count: undefined,
       licensePricing: getLicensePricing(beat),
+      displayProducer: getDisplayProducer(beat),
     });
   })
 );

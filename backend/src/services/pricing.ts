@@ -24,3 +24,21 @@ export function getLicensePricing(beat: { price: number | null }): LicensePricin
     unlimited: DEFAULT_STANDARD_PRICE * UNLIMITED_MULTIPLIER,
   };
 }
+
+/**
+ * The name(s) to actually display as "produced by" for a beat. Once real
+ * BeatCollaborator splits are configured (via the admin splits editor),
+ * those collaborators' names are the source of truth and should be shown
+ * instead of the legacy free-text producedBy field, which can drift out
+ * of sync with who's actually credited/paid. Falls back to producedBy (or
+ * "Doc Rolds") for beats with no splits configured yet.
+ */
+export function getDisplayProducer(beat: {
+  producedBy?: string | null;
+  beatCollaborators?: Array<{ collaborator: { name: string } }>;
+}): string {
+  if (beat.beatCollaborators && beat.beatCollaborators.length > 0) {
+    return beat.beatCollaborators.map((bc) => bc.collaborator.name).join(' & ');
+  }
+  return beat.producedBy || 'Doc Rolds';
+}

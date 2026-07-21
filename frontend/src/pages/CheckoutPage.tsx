@@ -665,10 +665,12 @@ export default function CheckoutPage(): ReactNode {
                   </button>
                 )}
 
-                <div className="checkout-secure-v2">
-                  <i className="fas fa-shield-alt" aria-hidden="true"></i>
-                  <span>Secure payment powered by {processor === 'STRIPE' ? 'Stripe' : 'Square'}</span>
-                </div>
+                {processor !== null && (
+                  <div className="checkout-secure-v2">
+                    <i className="fas fa-shield-alt" aria-hidden="true"></i>
+                    <span>Secure payment powered by {processor === 'STRIPE' ? 'Stripe' : 'Square'}</span>
+                  </div>
+                )}
               </form>
             )}
           </div>

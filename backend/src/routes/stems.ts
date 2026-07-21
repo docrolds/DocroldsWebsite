@@ -9,7 +9,7 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { PrismaClient } from '@prisma/client';
-import { asyncHandler, BadRequestError, NotFoundError } from '../middleware';
+import { asyncHandler, BadRequestError, NotFoundError, uploadLimiter } from '../middleware';
 import { config } from '../config/env';
 import { sendEmail } from '../services/email';
 import { captureError } from '../services/sentry';
@@ -223,6 +223,7 @@ router.get(
  */
 router.post(
   '/booking/:bookingNumber',
+  uploadLimiter,
   uploadStems.array('stems', 20),
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
     if (!isR2Configured()) {

@@ -17,8 +17,9 @@ import { config } from '../config/env';
 import { sendEmail } from '../services/email';
 import { captureError } from '../services/sentry';
 import { getLicensePricing } from '../services/pricing';
-import { getStripeClient, isStripeConfigured } from '../services/stripe';
+import { getStripeClient, isStripeConfigured, transferToCollaborator } from '../services/stripe';
 import { isValidEmail, escapeHtml } from '../utils/text';
+import { extractSquareError } from '../utils/square';
 import { paymentLimiter, authenticateToken, requireAdmin } from '../middleware';
 import {
   asyncHandler,
@@ -786,13 +787,12 @@ router.post(
       captureError(error, { orderNumber: order.orderNumber, context: 'checkout-payment' });
 
       // Square API errors have specific structure
-      const squareError = error as { errors?: Array<{ detail?: string; code?: string }> };
-      if (squareError.errors) {
-        const firstError = squareError.errors[0];
+      const firstError = extractSquareError(error);
+      if (firstError) {
         res.status(400).json({
           success: false,
-          message: firstError?.detail || 'Payment failed',
-          code: firstError?.code,
+          message: firstError.detail || 'Payment failed',
+          code: firstError.code,
         });
         return;
       }
@@ -929,18 +929,19 @@ async function createCollaboratorTransfers(
       }
 
       try {
-        const transfer = await stripe.transfers.create({
-          amount: Math.round(amount * 100),
-          currency: 'usd',
-          destination: split.collaborator.stripeAccountId,
-          source_transaction: sourceCharge,
+        const stripeTransferId = await transferToCollaborator({
+          orderItemId: item.id,
+          collaboratorId: split.collaboratorId,
+          amount,
+          stripeAccountId: split.collaborator.stripeAccountId,
+          sourceCharge,
         });
         await prisma.orderItemTransfer.create({
           data: {
             orderItemId: item.id,
             collaboratorId: split.collaboratorId,
             amount,
-            stripeTransferId: transfer.id,
+            stripeTransferId,
             status: 'COMPLETED',
           },
         });
@@ -1060,6 +1061,7 @@ interface ConfirmStripePaymentRequest {
  */
 router.post(
   '/checkout/confirm-stripe-payment',
+  paymentLimiter,
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
     if (!isStripeConfigured()) {
       throw new BadRequestError('Stripe is not configured');
@@ -1090,6 +1092,27 @@ router.post(
         data: { status: 'CANCELLED', paymentStatus: 'FAILED' },
       });
       res.status(400).json({ success: false, message: 'Payment was not completed', status: intent.status });
+      return;
+    }
+
+    // Atomically claim this order before doing any money-movement work.
+    // Without this, two concurrent confirm calls for the same order (e.g.
+    // a client retry racing the original request) could both pass the
+    // paymentStatus/status checks above and both run
+    // createCollaboratorTransfers, double-paying a collaborator. Only the
+    // request that actually flips PENDING -> PROCESSING proceeds; a losing
+    // request just returns the same idempotent success response.
+    const claim = await prisma.order.updateMany({
+      where: { id: order.id, paymentStatus: 'PENDING' },
+      data: { paymentStatus: 'PROCESSING' },
+    });
+    if (claim.count === 0) {
+      res.json({
+        success: true,
+        orderNumber: order.orderNumber,
+        paymentId: intent.id,
+        redirectUrl: `/order/${orderNumber}?success=true&key=${order.confirmationToken}`,
+      });
       return;
     }
 
@@ -1429,10 +1452,9 @@ router.post(
       console.error('[REFUND] Error refunding order:', error);
       captureError(error, { orderNumber: order.orderNumber, context: 'admin-refund-order' });
 
-      const squareError = error as { errors?: Array<{ detail?: string; code?: string }> };
-      if (squareError.errors) {
-        const firstError = squareError.errors[0];
-        throw new BadRequestError(firstError?.detail || 'Refund failed', firstError?.code);
+      const firstError = extractSquareError(error);
+      if (firstError) {
+        throw new BadRequestError(firstError.detail || 'Refund failed', firstError.code);
       }
 
       throw new InternalError('Failed to process refund');

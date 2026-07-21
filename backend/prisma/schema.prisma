@@ -158,6 +158,7 @@ model OrderItemTransfer {
   status           String       @default("PENDING") // PENDING, COMPLETED, FAILED
   createdAt        DateTime     @default(now())
 
+  @@unique([orderItemId, collaboratorId])
   @@index([orderItemId])
   @@index([status])
 }

@@ -1688,51 +1688,6 @@ section:not(#home) {
     margin: 2rem 0;
 }
 
-.beat-card {
-    background: white;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    transition: transform 0.3s;
-}
-
-.beat-card:hover {
-    transform: translateY(-5px);
-}
-
-.beat-image {
-    width: 100%;
-    height: 200px;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-size: 3rem;
-}
-
-.beat-info {
-    padding: 1.5rem;
-}
-
-.beat-title {
-    font-size: 1.3rem;
-    margin-bottom: 0.5rem;
-    color: #000;
-}
-
-.beat-genre {
-    color: var(--primary);
-    font-size: 0.9rem;
-    margin-bottom: 1rem;
-}
-
-.beat-description {
-    color: #555;
-    font-size: 0.95rem;
-    margin-bottom: 1rem;
-}
-
 .play-btn {
     background-color: var(--primary);
     color: white;
@@ -1778,7 +1733,7 @@ section:not(#home) {
     letter-spacing: -0.02em;
 }
 
-.player-controls {
+.home-player-controls {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1786,7 +1741,7 @@ section:not(#home) {
     margin: 0.5rem 0;
 }
 
-.player-btn {
+.home-player-btn {
     background: transparent;
     color: #666;
     border: 1px solid #2a2a2a;
@@ -1801,13 +1756,13 @@ section:not(#home) {
     transition: all var(--transition-fast);
 }
 
-.player-btn:hover {
+.home-player-btn:hover {
     color: var(--primary);
     border-color: var(--primary);
     background: rgba(232, 54, 40, 0.08);
 }
 
-.player-btn.play-btn-main {
+.home-player-btn.home-play-btn-main {
     width: 40px;
     height: 40px;
     font-size: 0.9rem;
@@ -1816,7 +1771,7 @@ section:not(#home) {
     background: rgba(232, 54, 40, 0.08);
 }
 
-.player-btn:active {
+.home-player-btn:active {
     transform: scale(0.95);
 }
 
@@ -2928,12 +2883,6 @@ nav a.active {
     text-transform: uppercase;
     letter-spacing: 1px;
     margin-bottom: 1rem;
-}
-
-.play-btn-main {
-    width: 60px;
-    height: 60px;
-    font-size: 1.5rem;
 }
 
 .license-info {
@@ -4406,46 +4355,6 @@ body.has-audio-player footer {
     font-size: 1rem;
 }
 
-/* Secure Badge */
-.checkout-secure {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    color: #888;
-    font-size: 0.85rem;
-    margin-top: 0.5rem;
-}
-
-.checkout-secure i {
-    font-size: 1.2rem;
-    color: #635bff;
-}
-
-/* Back Link */
-.checkout-back-link {
-    text-align: center;
-    margin-top: 2rem;
-}
-
-.checkout-back-link a {
-    color: #888;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    transition: all 0.3s ease;
-    font-size: 0.95rem;
-}
-
-.checkout-back-link a:hover {
-    color: var(--primary);
-}
-
-.checkout-back-link a i {
-    font-size: 0.85rem;
-}
-
 /* ==================== PAGE RESPONSIVE ==================== */
 
 @media (max-width: 1024px) {
@@ -5645,34 +5554,6 @@ body.has-audio-player footer {
     box-shadow: 0 4px 15px color-mix(in srgb, var(--primary) 40%, transparent);
 }
 
-/* Card Header */
-.card-header {
-    margin-bottom: 1rem;
-}
-
-.card-title {
-    font-size: 1.35rem;
-    font-weight: 700;
-    color: #fff;
-    margin-bottom: 0.35rem;
-    letter-spacing: 0.5px;
-}
-
-.card-subtitle {
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.9rem;
-}
-
-/* Card Price */
-.card-price {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
-    padding-bottom: 1.5rem;
-    border-bottom: 1px solid color-mix(in srgb, var(--primary) 15%, transparent);
-}
-
 .price-main {
     font-size: 2.5rem;
     font-weight: 800;
@@ -6858,95 +6739,6 @@ body.has-audio-player footer {
     justify-content: space-between;
     padding: 0.75rem 2rem;
     gap: 2rem;
-}
-
-/* Player Track Info */
-.player-track-info {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex: 1;
-    min-width: 0;
-}
-
-.player-artwork {
-    width: 45px;
-    height: 45px;
-    background: linear-gradient(135deg, var(--primary-muted), color-mix(in srgb, var(--primary) 5%, transparent));
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: color-mix(in srgb, var(--primary) 50%, transparent);
-    flex-shrink: 0;
-}
-
-.player-track-text {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    min-width: 0;
-}
-
-.player-track-title {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: #fff;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.player-track-artist {
-    font-size: 0.8rem;
-    color: rgba(255, 255, 255, 0.4);
-}
-
-/* Player Controls */
-.player-controls {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-}
-
-.player-btn {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.player-btn:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-}
-
-.player-btn.main {
-    width: 44px;
-    height: 44px;
-    background: var(--primary);
-    border: none;
-    color: #fff;
-    font-size: 1rem;
-}
-
-.player-btn.main:hover {
-    transform: scale(1.1);
-}
-
-.player-time {
-    font-size: 0.8rem;
-    color: rgba(255, 255, 255, 0.4);
-    font-family: monospace;
-    min-width: 90px;
 }
 
 /* Player Right */
@@ -8591,11 +8383,11 @@ body.has-audio-player footer {
     font-size: 2rem;
 }
 
-.beat-info {
+.dashboard-beat-info {
     padding: 0.875rem;
 }
 
-.beat-info h4 {
+.dashboard-beat-info h4 {
     font-size: 0.875rem;
     font-weight: 600;
     color: #fff;
@@ -8605,7 +8397,7 @@ body.has-audio-player footer {
     text-overflow: ellipsis;
 }
 
-.beat-info p {
+.dashboard-beat-info p {
     font-size: 0.75rem;
     color: #666;
     margin: 0;
@@ -8669,25 +8461,6 @@ body.has-audio-player footer {
     font-style: italic;
 }
 
-.status-badge {
-    display: inline-block;
-    font-size: 0.7rem;
-    font-weight: 600;
-    padding: 0.3rem 0.75rem;
-    border-radius: 20px;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-
-.status-badge.paid {
-    background: rgba(34, 197, 94, 0.15);
-    color: #22c55e;
-}
-
-.status-badge.pending {
-    background: rgba(234, 179, 8, 0.15);
-    color: #eab308;
-}
 
 .action-btn {
     display: inline-flex;
@@ -9586,30 +9359,6 @@ body.has-audio-player footer {
 .order-date {
     font-size: 0.85rem;
     color: #666;
-}
-
-.status-badge {
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 0.375rem 0.875rem;
-    border-radius: 20px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.status-badge.paid {
-    background: rgba(34, 197, 94, 0.15);
-    color: #22c55e;
-}
-
-.status-badge.pending {
-    background: rgba(234, 179, 8, 0.15);
-    color: #eab308;
-}
-
-.status-badge.failed {
-    background: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
 }
 
 /* Order Items */
@@ -11442,7 +11191,7 @@ body.has-audio-player footer {
     color: #fff;
 }
 
-.card-action {
+.admin-card-action {
     background: none;
     border: none;
     color: #E83628;
@@ -11454,7 +11203,7 @@ body.has-audio-player footer {
     transition: opacity 0.2s;
 }
 
-.card-action:hover {
+.admin-card-action:hover {
     opacity: 0.8;
 }
 
@@ -11462,26 +11211,26 @@ body.has-audio-player footer {
     padding: 1.5rem;
 }
 
-.card-loading {
+.admin-card-loading {
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 2rem;
 }
 
-.card-empty {
+.admin-card-empty {
     text-align: center;
     padding: 2rem;
     color: #666;
 }
 
-.card-empty i {
+.admin-card-empty i {
     font-size: 2rem;
     margin-bottom: 0.75rem;
     color: #444;
 }
 
-.card-empty p {
+.admin-card-empty p {
     font-size: 0.9rem;
 }
 
@@ -14942,6 +14691,28 @@ body.has-audio-player footer {
 
 .comment-delete-btn:hover {
     color: #ef4444;
+}
+
+.comment-report-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.7rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0;
+    transition: color 0.15s ease;
+}
+
+.comment-report-btn:hover:not(:disabled) {
+    color: #ef4444;
+}
+
+.comment-report-btn:disabled {
+    color: rgba(255, 255, 255, 0.2);
+    cursor: default;
 }
 
 /* Comment Thread */

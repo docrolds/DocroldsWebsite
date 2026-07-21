@@ -5,6 +5,7 @@ import { useAudioPlayer, Beat as AudioBeat } from '../context/AudioPlayerContext
 import { useCart, LicenseTier, LicensePricing, getLicenseTiersForBeat } from '../context/CartContext';
 import { useToast } from '../context/NotificationContext';
 import { useScrollAnimation } from '../hooks/useScrollAnimation';
+import { getGradientClass } from '../utils/beatDisplay';
 
 // ============================================================================
 // Type Definitions
@@ -16,6 +17,7 @@ import { useScrollAnimation } from '../hooks/useScrollAnimation';
  */
 interface Beat extends AudioBeat {
   producedBy?: string;
+  displayProducer?: string;
   producer?: string;
   soldExclusively?: boolean;
   audioFile: string | null;
@@ -23,18 +25,6 @@ interface Beat extends AudioBeat {
   licensePricing?: LicensePricing;
   [key: string]: unknown; // Index signature for cart compatibility
 }
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-// Generate a consistent gradient class for beats without cover art -
-// mirrors BeatsPage.tsx's getGradientClass so both pages' placeholder
-// thumbnails look the same for a given beat.
-const getGradientClass = (beatId: string | number): string => {
-  const hash = String(beatId).split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return `gradient-${(hash % 10) + 1}`;
-};
 
 // ============================================================================
 // Component
@@ -149,9 +139,9 @@ function Beats(): JSX.Element {
           <div className="now-playing-title">Now Playing</div>
           <div className="now-playing-beat">{displayBeat?.title || 'Select a beat'}</div>
 
-          <div className="player-controls" role="group" aria-label="Audio player controls">
+          <div className="home-player-controls" role="group" aria-label="Audio player controls">
             <button
-              className="player-btn"
+              className="home-player-btn"
               onClick={playPrev}
               title="Previous"
               aria-label="Previous track"
@@ -160,7 +150,7 @@ function Beats(): JSX.Element {
               <i className="fas fa-step-backward" aria-hidden="true"></i>
             </button>
             <button
-              className="player-btn play-btn-main"
+              className="home-player-btn home-play-btn-main"
               onClick={() => {
                 if (currentBeatInList) {
                   togglePlayPause();
@@ -174,7 +164,7 @@ function Beats(): JSX.Element {
               <i className={`fas ${isPlaying && currentBeatInList ? 'fa-pause' : 'fa-play'}`} aria-hidden="true"></i>
             </button>
             <button
-              className="player-btn"
+              className="home-player-btn"
               onClick={playNext}
               title="Next"
               aria-label="Next track"
@@ -189,7 +179,7 @@ function Beats(): JSX.Element {
           <div className="beat-info-grid">
             <div className="beat-info-item">
               <div className="beat-info-label">Producer</div>
-              <div className="beat-info-value">{displayBeat?.producedBy || displayBeat?.producer || 'Doc Rolds'}</div>
+              <div className="beat-info-value">{displayBeat?.displayProducer || displayBeat?.producedBy || displayBeat?.producer || 'Doc Rolds'}</div>
             </div>
             <div className="beat-info-item">
               <div className="beat-info-label">BPM</div>
@@ -230,7 +220,7 @@ function Beats(): JSX.Element {
                 role="button"
                 tabIndex={0}
                 aria-current={isThisBeatPlaying ? 'true' : undefined}
-                aria-label={`${beat.title} by ${beat.producedBy || beat.producer || 'Doc Rolds'}, ${beat.genre}, ${beat.bpm || '-'} BPM, $${beat.price || 50}`}
+                aria-label={`${beat.title} by ${beat.displayProducer || beat.producedBy || beat.producer || 'Doc Rolds'}, ${beat.genre}, ${beat.bpm || '-'} BPM, $${beat.price || 50}`}
                 onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
@@ -290,7 +280,7 @@ function Beats(): JSX.Element {
                       {beat.title}
                       {beat.soldExclusively && <span className="sold-inline-badge">SOLD</span>}
                     </span>
-                    <span className="beat-producer">{beat.producedBy || beat.producer || 'Doc Rolds'} · {beat.genre} · {beat.bpm || '-'} BPM</span>
+                    <span className="beat-producer">{beat.displayProducer || beat.producedBy || beat.producer || 'Doc Rolds'} · {beat.genre} · {beat.bpm || '-'} BPM</span>
                   </div>
                 </div>
 
