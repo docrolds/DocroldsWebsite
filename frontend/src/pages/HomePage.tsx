@@ -211,11 +211,11 @@ function HomePage(): ReactNode {
       </section>
 
       {/* All sections */}
+      <Beats />
       <Sessions />
       <Videos />
       <Instagram />
       <Team />
-      <Beats />
       <Discord />
       <FAQ />
     </>

@@ -1054,19 +1054,19 @@ function BeatsPage(): ReactNode {
                       playlists.map((playlist: Playlist) => (
                         <button
                           key={playlist.id}
-                          className={`playlist-item ${savedInPlaylists.has(playlist.id) ? 'active' : ''}`}
+                          className={`saved-playlist-item ${savedInPlaylists.has(playlist.id) ? 'active' : ''}`}
                           onClick={() => toggleBeatInPlaylist(playlist.id)}
                         >
-                          <div className="playlist-item-icon">
+                          <div className="saved-playlist-item-icon">
                             {savedInPlaylists.has(playlist.id) ? (
                               <i className="fas fa-check"></i>
                             ) : (
                               <i className="fas fa-music"></i>
                             )}
                           </div>
-                          <div className="playlist-item-info">
-                            <span className="playlist-item-name">{playlist.name}</span>
-                            <span className="playlist-item-count">
+                          <div className="saved-playlist-item-info">
+                            <span className="saved-playlist-item-name">{playlist.name}</span>
+                            <span className="saved-playlist-item-count">
                               {playlist.beats?.length || 0} beat{(playlist.beats?.length || 0) !== 1 ? 's' : ''}
                             </span>
                           </div>

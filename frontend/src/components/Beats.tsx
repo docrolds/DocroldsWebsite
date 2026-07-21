@@ -24,6 +24,18 @@ interface Beat extends AudioBeat {
 }
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+// Generate a consistent gradient class for beats without cover art -
+// mirrors BeatsPage.tsx's getGradientClass so both pages' placeholder
+// thumbnails look the same for a given beat.
+const getGradientClass = (beatId: string | number): string => {
+  const hash = String(beatId).split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return `gradient-${(hash % 10) + 1}`;
+};
+
+// ============================================================================
 // Component
 // ============================================================================
 
@@ -203,65 +215,88 @@ function Beats(): JSX.Element {
           )}
         </div>
 
-        <ul className="playlist" role="list" aria-label="Beat playlist">
-          {beats.map((beat: Beat) => {
+        <div className="home-beats-list" role="list" aria-label="Beat playlist">
+          {beats.map((beat: Beat, index: number) => {
             const isThisBeatPlaying = currentBeat?.id === beat.id;
+            const isThisPlaying = isThisBeatPlaying && isPlaying;
             return (
-              <li
+              <div
                 key={beat.id}
-                className={`playlist-item ${isThisBeatPlaying ? 'active' : ''}`}
+                className={`home-beat-row ${isThisBeatPlaying ? 'active' : ''}`}
                 onClick={() => handlePlayBeat(beat.id)}
                 role="button"
                 tabIndex={0}
                 aria-current={isThisBeatPlaying ? 'true' : undefined}
                 aria-label={`${beat.title} by ${beat.producedBy || beat.producer || 'Doc Rolds'}, ${beat.genre}, ${beat.bpm || '-'} BPM, $${beat.price || 50}`}
-                onKeyDown={(e: KeyboardEvent<HTMLLIElement>) => {
+                onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     handlePlayBeat(beat.id);
                   }
                 }}
               >
-                <div className="playlist-item-icon" aria-hidden="true">
-                  {isThisBeatPlaying && isPlaying ? (
-                    <span className="playlist-item-active"><i className="fas fa-pause"></i></span>
-                  ) : isThisBeatPlaying ? (
-                    <span className="playlist-item-active"><i className="fas fa-play"></i></span>
-                  ) : (
-                    <i className="fas fa-music"></i>
-                  )}
-                </div>
-                <div className="playlist-item-content">
-                  <div className={`playlist-item-title ${isThisBeatPlaying ? 'playlist-item-active-title' : ''}`}>
-                    {beat.title}
-                  </div>
-                  <div className="playlist-item-producer">
-                    <span className="playlist-item-producer-label">Produced By:</span> {beat.producedBy || beat.producer || 'Doc Rolds'}
-                  </div>
-                  <div className="playlist-item-meta">
-                    <span className="playlist-item-genre">{beat.genre}</span>
-                    <span className="playlist-item-separator" aria-hidden="true">•</span>
-                    <span className="playlist-item-bpm">{beat.bpm || '-'} BPM</span>
-                  </div>
-                </div>
-                <div className="playlist-item-price">
-                  {beat.soldExclusively ? (
-                    <span className="sold-badge-small">SOLD</span>
-                  ) : (
-                    `$${beat.price || 50}`
-                  )}
-                </div>
-                {beat.soldExclusively ? (
-                  <span
-                    className="playlist-item-license-btn sold"
-                    title="This beat has been sold exclusively"
-                    aria-label="Sold exclusively"
+                <div className="col-play">
+                  <button
+                    className="row-play-btn"
+                    onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); handlePlayBeat(beat.id); }}
+                    aria-label={isThisPlaying ? `Pause ${beat.title}` : `Play ${beat.title}`}
+                    tabIndex={-1}
                   >
+                    {isThisPlaying ? (
+                      <i className="fas fa-pause" aria-hidden="true"></i>
+                    ) : (
+                      <>
+                        <span className="row-index">{index + 1}</span>
+                        <i className="fas fa-play row-play-icon" aria-hidden="true"></i>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="col-title">
+                  <div className="beat-artwork">
+                    {beat.coverArt ? (
+                      <img
+                        src={beat.coverArt.startsWith('http') ? beat.coverArt : `${API_URL.replace('/api', '')}${beat.coverArt}`}
+                        alt={beat.title}
+                        className="artwork-image"
+                      />
+                    ) : (
+                      <div className={`artwork-placeholder ${getGradientClass(beat.id)}`} aria-hidden="true">
+                        <i className="fas fa-music"></i>
+                      </div>
+                    )}
+                    {isThisPlaying && (
+                      <div className="artwork-play-overlay visible">
+                        <i className="fas fa-pause"></i>
+                      </div>
+                    )}
+                    {beat.soldExclusively && (
+                      <div className="sold-badge-overlay" aria-label="This beat has been sold exclusively">
+                        SOLD
+                      </div>
+                    )}
+                  </div>
+                  <div className="beat-info">
+                    <span className="beat-title">
+                      {beat.title}
+                      {beat.soldExclusively && <span className="sold-inline-badge">SOLD</span>}
+                    </span>
+                    <span className="beat-producer">{beat.producedBy || beat.producer || 'Doc Rolds'} · {beat.genre} · {beat.bpm || '-'} BPM</span>
+                  </div>
+                </div>
+
+                <div className="home-beat-price">
+                  {!beat.soldExclusively && `$${beat.price || 50}`}
+                </div>
+
+                {beat.soldExclusively ? (
+                  <span className="license-btn sold" title="This beat has been sold exclusively" aria-label="Sold exclusively">
                     <i className="fas fa-check-circle" aria-hidden="true"></i>
                   </span>
                 ) : (
                   <button
-                    className="playlist-item-license-btn"
+                    className="license-btn"
                     onClick={(e: MouseEvent<HTMLButtonElement>) => handleLicenseClick(e, beat)}
                     title="License this beat"
                     aria-label={`License ${beat.title}`}
@@ -269,10 +304,10 @@ function Beats(): JSX.Element {
                     <i className="fas fa-shopping-cart" aria-hidden="true"></i>
                   </button>
                 )}
-              </li>
+              </div>
             );
           })}
-        </ul>
+        </div>
 
         <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
           <Link

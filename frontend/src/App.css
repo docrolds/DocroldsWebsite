@@ -1918,120 +1918,60 @@ section:not(#home) {
     text-align: right;
 }
 
-.playlist {
+/* ============================================
+   HOMEPAGE BEATS WIDGET - track rows
+   Mirrors BeatsPage.tsx's row pattern (col-title/beat-artwork/row-play-btn
+   etc, reused as-is below) but with its own grid-column layout, since the
+   homepage widget shows fewer columns (no BPM/key/inline progress - those
+   already live in the "Now Playing" panel above the list).
+   ============================================ */
+
+.home-beats-list {
     list-style: none;
     position: relative;
-    max-height: 300px;
+    max-height: 340px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.125rem;
     margin-top: 1rem;
     scrollbar-width: thin;
     scrollbar-color: var(--primary) transparent;
 }
 
-.playlist::-webkit-scrollbar {
+.home-beats-list::-webkit-scrollbar {
     width: 4px;
 }
 
-.playlist::-webkit-scrollbar-thumb {
+.home-beats-list::-webkit-scrollbar-thumb {
     background: var(--primary);
     border-radius: 2px;
 }
 
-.playlist-item {
-    display: flex;
-    align-items: center;
+.home-beat-row {
+    display: grid;
+    grid-template-columns: 28px 1fr auto auto;
     gap: 0.75rem;
     padding: 0.6rem 0.75rem;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    border: 1px solid transparent;
-    border-left: 3px solid transparent;
-    margin-bottom: 0;
-    background: transparent;
-}
-
-.playlist-item:hover {
-    background: rgba(255, 255, 255, 0.03);
-    border-left-color: rgba(232, 54, 40, 0.5);
-}
-
-.playlist-item.active {
-    background: rgba(255, 255, 255, 0.04);
-    border-left-color: var(--primary);
-}
-
-.playlist-item-icon {
-    font-size: 1rem;
-    min-width: 24px;
-    text-align: center;
-    color: #555;
-}
-
-.playlist-item-active {
-    color: var(--primary);
-    font-size: 0.9rem;
-    animation: pulse 1s infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
-
-.playlist-item-content {
-    flex: 1;
-    min-width: 0;
-}
-
-.playlist-item-title {
-    color: #ddd;
-    font-weight: 500;
-    font-size: 0.85rem;
-    margin-bottom: 0;
-    line-height: 1.3;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.playlist-item-producer {
-    color: #999;
-    font-size: 0.7rem;
-    margin-top: 0.1rem;
-}
-
-.playlist-item-producer-label {
-    color: #666;
-}
-
-.playlist-item-meta {
-    display: flex;
     align-items: center;
-    gap: 0.4rem;
-    margin-top: 0.1rem;
+    border-radius: 8px;
+    transition: background 0.15s ease;
+    cursor: pointer;
 }
 
-.playlist-item-genre {
-    color: #666;
-    font-size: 0.65rem;
+.home-beat-row:hover {
+    background: rgba(255, 255, 255, 0.04);
 }
 
-.playlist-item-bpm {
-    color: #666;
-    font-size: 0.65rem;
+.home-beat-row.active {
+    background: rgba(255, 255, 255, 0.05);
 }
 
-.playlist-item-separator {
-    color: #444;
-    font-size: 0.5rem;
-}
-
-.playlist-item-active-title {
+.home-beat-price {
     color: var(--primary);
+    font-weight: 600;
+    font-size: 0.9rem;
+    white-space: nowrap;
 }
 
 /* ============================================
@@ -2988,44 +2928,6 @@ nav a.active {
     text-transform: uppercase;
     letter-spacing: 1px;
     margin-bottom: 1rem;
-}
-
-.playlist-item-duration {
-    color: #888;
-    font-size: 0.85rem;
-}
-
-.playlist-item-price {
-    color: var(--primary);
-    font-weight: 600;
-    font-size: 0.9rem;
-    min-width: 50px;
-    text-align: right;
-    margin-left: auto;
-}
-
-.playlist-item-license-btn {
-    background: transparent;
-    border: 1px solid color-mix(in srgb, var(--primary) 50%, transparent);
-    color: var(--primary);
-    padding: 0.4rem 0.6rem;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    margin-left: 0.75rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.playlist-item-license-btn:hover {
-    background: var(--primary);
-    color: #fff;
-    border-color: var(--primary);
-}
-
-.playlist-item-license-btn i {
-    font-size: 0.85rem;
 }
 
 .play-btn-main {
@@ -6908,13 +6810,6 @@ body.has-audio-player footer {
     font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.5px;
-}
-
-.playlist-item-license-btn.sold {
-    background: rgba(232, 54, 40, 0.15);
-    border-color: rgba(232, 54, 40, 0.4);
-    color: #E83628;
-    cursor: default;
 }
 
 /* No Beats */
@@ -14603,7 +14498,7 @@ body.has-audio-player footer {
     gap: 0.25rem;
 }
 
-.playlist-item {
+.saved-playlist-item {
     display: flex;
     align-items: center;
     gap: 0.75rem;
@@ -14617,16 +14512,16 @@ body.has-audio-player footer {
     text-align: left;
 }
 
-.playlist-item:hover {
+.saved-playlist-item:hover {
     background: rgba(255, 255, 255, 0.05);
 }
 
-.playlist-item.active {
+.saved-playlist-item.active {
     background: rgba(34, 197, 94, 0.1);
     border-color: rgba(34, 197, 94, 0.3);
 }
 
-.playlist-item-icon {
+.saved-playlist-item-icon {
     width: 32px;
     height: 32px;
     border-radius: 6px;
@@ -14639,12 +14534,12 @@ body.has-audio-player footer {
     flex-shrink: 0;
 }
 
-.playlist-item.active .playlist-item-icon {
+.saved-playlist-item.active .saved-playlist-item-icon {
     background: #22c55e;
     color: #000;
 }
 
-.playlist-item-info {
+.saved-playlist-item-info {
     flex: 1;
     min-width: 0;
     display: flex;
@@ -14652,7 +14547,7 @@ body.has-audio-player footer {
     gap: 0.125rem;
 }
 
-.playlist-item-name {
+.saved-playlist-item-name {
     font-size: 0.85rem;
     font-weight: 500;
     color: #fff;
@@ -14661,7 +14556,7 @@ body.has-audio-player footer {
     text-overflow: ellipsis;
 }
 
-.playlist-item-count {
+.saved-playlist-item-count {
     font-size: 0.7rem;
     color: #666;
 }
